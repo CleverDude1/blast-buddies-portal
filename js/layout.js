@@ -23,8 +23,7 @@ const flag = c => `images/flags/${c}.png`;
 document.body.insertAdjacentHTML('afterbegin', `
 <aside class="sidebar">
   <a class="brand" href="index.html">
-    <img src="images/logo.png" alt="" onerror="this.onerror=null;this.src='images/placeholder.png'">
-    <span>${CONFIG.siteName}</span>
+    <img src="images/logo.png" alt="${CONFIG.siteName}" onerror="this.onerror=null;this.src='images/placeholder.png'">
   </a>
   <nav class="nav">
     ${NAV.map(([id,label,href]) => `<a href="${href}" class="${id===page?'active':''}">${icon(id)}${label}</a>`).join('')}
