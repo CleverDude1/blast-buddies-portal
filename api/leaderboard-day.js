@@ -1,16 +1,13 @@
 export default async function handler(req, res) {
     try {
-        const playerId = req.query.playerId || "";
-
-        const url =
-            "https://eu1-ping.blastbuddies.io/api/leaderboard/day" +
-            (playerId ? `?playerId=${encodeURIComponent(playerId)}` : "");
-
-        const response = await fetch(url, {
-            headers: {
-                "Accept": "application/json"
+        const response = await fetch(
+            "https://eu1-ping.blastbuddies.io/api/leaderboard/day",
+            {
+                headers: {
+                    "Accept": "application/json"
+                }
             }
-        });
+        );
 
         const data = await response.json();
 
