@@ -1,0 +1,46 @@
+:root{--bg:#10150c;--side:#0d110b;--card:#161c11;--card2:#1c2316;--line:#2a3322;--text:#f1efe6;--muted:#9aa38c;--gold:#f2a735;--sw:280px;--hh:90px}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.sidebar{width:var(--sw);flex:none;height:100vh;position:sticky;top:0;background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;transition:margin .25s}
+body.collapsed .sidebar{margin-left:calc(var(--sw) * -1)}
+.brand{height:var(--hh);flex:none;display:flex;align-items:center;gap:12px;padding:0 20px;background:linear-gradient(135deg,#243214,#0d110b);border-bottom:1px solid var(--line)}
+.brand img{width:52px;height:52px;object-fit:contain}
+.brand span{font-family:'Luckiest Guy',cursive;font-size:22px;line-height:1;color:var(--gold);text-shadow:0 2px 0 #000}
+.nav{flex:1;overflow-y:auto;padding:16px 12px}
+.nav a{display:flex;align-items:center;gap:14px;padding:8px 12px;margin-bottom:4px;border-radius:10px;font-weight:600;color:#d9dccf;border-left:3px solid transparent}
+.nav a:hover{background:#171d12}
+.nav a.active{background:#221c10;color:#fff;border-left-color:var(--gold)}
+.nav img,.card-link img{width:36px;height:36px;object-fit:contain;border-radius:8px;background:var(--card2)}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{height:var(--hh);flex:none;display:flex;align-items:center;gap:10px;padding:0 24px;background:var(--bg);border-bottom:1px solid var(--line)}
+.toggle{width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:20px;cursor:pointer}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:8px;height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);font:600 15px 'Inter',sans-serif;cursor:pointer}
+.pill:hover{background:var(--card2)}
+.pill img{width:22px;height:22px;object-fit:contain}
+.lang{position:relative}
+.lang-menu{display:none;position:absolute;right:0;top:52px;min-width:170px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px;z-index:10}
+.lang.open .lang-menu{display:block}
+.lang-menu button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;background:none;border:0;border-radius:8px;color:var(--text);font:500 14px 'Inter',sans-serif;cursor:pointer;text-align:left}
+.lang-menu button:hover{background:var(--card2)}
+.lang-menu img{width:24px;height:16px;object-fit:cover;border-radius:2px}
+.content{flex:1;padding:32px 24px 48px;background:linear-gradient(#4a6a14 0,#27380c 120px,var(--bg) 320px)}
+.panel{background:rgba(15,20,11,.92);border:1px solid var(--line);border-radius:18px;padding:32px;margin:0 auto 24px;max-width:1400px}
+.hero{text-align:center;padding:56px 32px}
+.hero h1{font-size:clamp(30px,5vw,52px);font-weight:800;letter-spacing:-.02em}
+.hero p{color:var(--muted);margin-top:12px;font-size:18px}
+.hero h2{font-size:20px;margin:36px 0 14px}
+.search{width:min(560px,100%);height:64px;padding:0 22px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--text);font:400 18px 'Inter',sans-serif}
+.hero small{display:block;color:var(--muted);margin:18px auto 0;max-width:520px;line-height:1.5}
+.panel h3{font-size:22px;margin-bottom:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.card-link{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-weight:700}
+.card-link:hover{background:var(--card2);border-color:#3a4630}
+.card-link i{margin-left:auto;color:var(--muted);font-style:normal}
+.page-title{font-size:32px;font-weight:800;margin-bottom:8px}
+.muted{color:var(--muted);line-height:1.6}
+code{background:var(--card2);padding:2px 8px;border-radius:6px;font-size:14px}
+@media(max-width:800px){.sidebar{position:fixed;z-index:20}.topbar .hide-sm{display:none}.topbar{padding:0 12px}}
