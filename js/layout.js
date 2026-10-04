@@ -17,13 +17,13 @@ const NAV = [
   ['updates','Updates','updates.html']
 ];
 const page = document.body.dataset.page;
-const icon = id => `<img src="images/icons/${id}.png" alt="" onerror="this.style.visibility='hidden'">`;
+const icon = id => `<img src="images/icons/${id}.png" alt="" onerror="this.onerror=null;this.src='images/placeholder.png'">`;
 const flag = c => `images/flags/${c}.png`;
 
 document.body.insertAdjacentHTML('afterbegin', `
 <aside class="sidebar">
   <a class="brand" href="index.html">
-    <img src="images/logo.png" alt="" onerror="this.style.display='none'">
+    <img src="images/logo.png" alt="" onerror="this.onerror=null;this.src='images/placeholder.png'">
     <span>${CONFIG.siteName}</span>
   </a>
   <nav class="nav">
