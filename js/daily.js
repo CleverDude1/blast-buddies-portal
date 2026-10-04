@@ -1,7 +1,7 @@
 // ================= CONFIG =================
 const API_URL = 'https://blast-buddies-portal.vercel.app/api/leaderboard-day';
 const TOP_N = 50;
-const MAX_LEVEL = 100;
+const MAX_LEVEL = 100; 
 const MOCK_BESTS = true;   // PLACEHOLDER: fake personal bests so the bars are visible. Set false once a real source exists.
 
 // PLACEHOLDER: converts totalXp -> level (1-100). Replace with the game's real XP table.
