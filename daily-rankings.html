@@ -4,15 +4,35 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Daily Rankings | Blast Buddies Tracker</title>
-<link rel="icon" href="images/logo.png">
+<link rel="icon" href="images/icons/home.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-page="daily">
 <template id="page-content">
-<section class="panel"><h1 class="page-title">Daily Rankings</h1><p class="muted">Today's top players. Coming soon.</p></section>
+<div class="toolbar">
+  <input class="search" id="q" type="search" placeholder="Search for a player or clan" aria-label="Search">
+  <button class="pill" id="xlsx"><img src="images/icons/download.png" alt="">Download XLSX</button>
+</div>
+<p class="status" id="status">Loading...</p>
+<div class="board"><div class="board-inner">
+  <div class="lb-row lb-head">
+    <span style="text-align:center">#</span><span>Nickname</span>
+    <img src="images/icons/col-lvl.png" alt="Level" title="Level">
+    <img src="images/icons/col-kills.png" alt="Kills" title="Kills">
+    <img src="images/icons/col-deaths.png" alt="Deaths" title="Deaths">
+    <img src="images/icons/col-kdr.png" alt="KDR" title="KDR">
+    <img src="images/icons/col-weapon.png" alt="Weapon" title="Top weapon">
+    <img src="images/icons/col-clan.png" alt="Clan" title="Clan">
+    <span></span>
+  </div>
+  <div id="rows"></div>
+</div></div>
+<dialog id="dlg"><button class="pill dlg-close" id="dlgClose">Close</button><div id="dlgBody"></div></dialog>
 </template>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="js/layout.js"></script>
+<script src="js/daily.js"></script>
 </body>
 </html>
