@@ -43,3 +43,38 @@ body.collapsed .sidebar{margin-left:calc(var(--sw) * -1)}
 .muted{color:var(--muted);line-height:1.6}
 code{background:var(--card2);padding:2px 8px;border-radius:6px;font-size:14px}
 @media(max-width:800px){.sidebar{position:fixed;z-index:20}.topbar .hide-sm{display:none}.topbar{padding:0 12px}}
+/* ---- leaderboard ---- */
+.toolbar{display:flex;gap:12px;max-width:1400px;margin:0 auto 16px;flex-wrap:wrap}
+.toolbar .search{flex:1;min-width:220px;height:52px;font-size:16px}
+.status{max-width:1400px;margin:0 auto 12px;color:var(--muted);font-size:14px}
+.status b{color:var(--gold)}
+.board{max-width:1400px;margin:0 auto;background:rgba(15,20,11,.94);border:1px solid var(--line);border-radius:18px;overflow-x:auto}
+.board-inner{min-width:1020px}
+.lb-row{display:grid;grid-template-columns:56px minmax(160px,1.6fr) 1fr 1fr 1fr 1fr 80px 160px 64px;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--line)}
+.lb-head{height:80px;font-weight:700;color:var(--muted);border-bottom:1px solid #3a4630}
+.lb-head img{width:44px;height:44px;object-fit:contain;display:block}
+.lb-row:not(.lb-head):hover{background:rgba(255,255,255,.03)}
+.rank{color:var(--muted);font-weight:700;text-align:center}
+.pname{font-size:18px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stat .top{display:flex;justify-content:space-between;align-items:baseline;font-weight:800;font-size:15px}
+.stat .pct{font-size:12px;font-weight:700}
+.pct.good{color:#6fdc7a}.pct.bad{color:#ff6b6b}.pct.new{color:var(--muted)}
+.bar{height:8px;border-radius:5px;background:#05070400;background:#050704;margin-top:6px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:5px}
+.b-lvl i{background:linear-gradient(90deg,#d9921f,#ffd24d)}
+.b-kills i{background:linear-gradient(90deg,#2f8f3f,#6fdc7a)}
+.b-deaths i{background:linear-gradient(90deg,#1f4fb0,#4da6ff)}
+.b-kdr i{background:linear-gradient(90deg,#a02323,#ff5b5b)}
+.weapon img{width:56px;height:56px;object-fit:contain;display:block}
+.clan{font-weight:800;font-size:17px;letter-spacing:.5px}
+.inspect{width:44px;height:44px;border:0;background:none;padding:0;border-radius:10px;cursor:pointer}
+.inspect img{width:100%;height:100%;object-fit:contain}
+.inspect:hover{filter:brightness(1.25)}
+dialog{margin:auto;width:min(560px,92vw);background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:18px;padding:28px}
+dialog::backdrop{background:rgba(0,0,0,.65)}
+dialog h3{font-size:24px;margin-bottom:4px}
+.dlg-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}
+.dlg-grid div{background:var(--card2);border-radius:10px;padding:10px 12px;font-size:14px;color:var(--muted)}
+.dlg-grid b{display:block;color:var(--text);font-size:17px;margin-top:2px}
+.dlg-section{border:1px dashed var(--line);border-radius:10px;padding:14px;margin-bottom:10px;color:var(--muted);font-size:14px}
+.dlg-close{float:right}
