@@ -1,6 +1,6 @@
 name: hourly-collect
 on:
-    schedule: [{ cron: '55 * * * *' }]
+    schedule: [{ cron: '50 * * * *' }]
   workflow_dispatch: {}
 jobs:
   collect:
