@@ -1,18 +1,67 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Weapons | Blast Buddies Tracker</title>
-<link rel="icon" href="images/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
+<title>Weapons – Blast Buddies Tracker</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-page="weapons">
+
 <template id="page-content">
-<section class="panel"><h1 class="page-title">Weapons</h1><p class="muted">Every weapon and its stats. Coming soon.</p></section>
+  <div class="weapon-sections" id="weaponSections"></div>
+
+  <dialog id="weaponDlg">
+    <button class="pill dlg-close" id="weaponClose">Close</button>
+    <img class="wdlg-img" id="wdImg" alt="">
+    <h3 id="wdName"></h3>
+    <div class="map-sub" id="wdCat"></div>
+    <div class="dlg-section" id="wdInfo">More information coming soon.</div>
+  </dialog>
 </template>
+
 <script src="js/layout.js"></script>
+<script>
+// Names must match the image file names in images/weapons (e.g. images/weapons/Assault.png)
+const IMG_EXT = 'png';
+const WEAPONS = [
+  ['Primary',   ['Assault','Bow','Burst','Lmg','MAC-10','Shotgun','Sniper','Thompson','UMP-45']],
+  ['Secondary', ['Energy','Flare','Pistol','RayGun','Revolver','Snare']],
+  ['Grenades',  ['BlackHole','Flashbang','Inferno','Shockwave','Smoke','Storm','Updraft','Warp']]
+];
+
+// Fill in details later, e.g.  Assault: '<p>Damage: ...</p>'
+const INFO = {};
+
+const wImg = n => `images/weapons/${n}.${IMG_EXT}`;
+const fallback = `this.onerror=null;this.src='images/placeholder.png'`;
+
+document.getElementById('weaponSections').innerHTML = WEAPONS.map(([cat, list]) => `
+  <section class="panel weapon-panel">
+    <h3>${cat}</h3>
+    <div class="weapon-grid">
+      ${list.map(n => `
+        <button class="weapon-tile" data-name="${n}" data-cat="${cat}">
+          <img src="${wImg(n)}" alt="${n}" onerror="${fallback}">
+          <span>${n}</span>
+        </button>`).join('')}
+    </div>
+  </section>`).join('');
+
+const dlg = document.getElementById('weaponDlg');
+document.querySelectorAll('.weapon-tile').forEach(t => t.onclick = () => {
+  const n = t.dataset.name;
+  const img = document.getElementById('wdImg');
+  img.onerror = () => { img.onerror = null; img.src = 'images/placeholder.png'; };
+  img.src = wImg(n);
+  img.alt = n;
+  document.getElementById('wdName').textContent = n;
+  document.getElementById('wdCat').textContent = t.dataset.cat;
+  document.getElementById('wdInfo').innerHTML = INFO[n] || 'More information coming soon.';
+  dlg.showModal();
+});
+document.getElementById('weaponClose').onclick = () => dlg.close();
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+</script>
 </body>
 </html>
