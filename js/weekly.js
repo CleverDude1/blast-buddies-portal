@@ -6,8 +6,23 @@ const MAX_LEVEL = 100;
 // PLACEHOLDER: converts totalXp -> level (1-100). Replace with the game's real XP table.
 const xpToLevel = xp => Math.min(MAX_LEVEL, Math.max(1, Math.floor(xp / 12000)));
 
-// PLACEHOLDER: clan color number -> CSS color. Fill in once the clan API / color list is known.
-const CLAN_COLORS = {0:'#ffffff',1:'#ff4d4d',2:'#4dff6a',3:'#4da6ff',4:'#ffd84d',5:'#c44dff',6:'#ff9a4d',7:'#4dfff0',8:'#ff4de1',9:'#a0a0a0',10:'#8b5a2b',11:'#9aff4d'};
+// Clan color number -> CSS color. Colors not listed fall back to white. Add more as you identify them.
+const CLAN_COLORS = {
+  0:'#ff4d4d',   // red
+  1:'#ff9a2e',   // orange
+  3:'#d4a017',   // darker yellow
+  6:'#4dff6a',   // green
+  7:'#2f9e44',   // darker green
+  9:'#1fa3a3',   // dark cyan
+  11:'#1f3dff',  // bright dark blue
+  13:'#2b4aa8',  // dark blue
+  16:'#b86bff',  // purple (see note: also described as red)
+  18:'#ff5c8a',  // slightly more pink red
+  23:'#ffd84d',  // yellow
+  26:'#8ff7ff',  // lighter cyan
+  27:'#4df0ff',  // cyan
+  30:'#ff7ac8'   // pink
+};
 
 // ================= PLACEHOLDER DATA SOURCES =================
 // Personal bests per playerId: { [playerId]: { kills, deaths, kdr } }
