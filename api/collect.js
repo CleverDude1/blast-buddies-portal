@@ -40,7 +40,7 @@ export default async function handler(req, res) {
   if (!secret) return res.status(500).json({ error: 'CRON_SECRET is not set' });
   if (req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: 'unauthorized' });
 
-  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
     auth: { persistSession: false },
   });
 
