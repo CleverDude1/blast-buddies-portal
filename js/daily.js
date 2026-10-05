@@ -1,7 +1,7 @@
 // ================= CONFIG =================
 const API_URL = '/api/leaderboard-day';
 const TOP_N = 50;
-const MAX_LEVEL = 100; 
+const MAX_LEVEL = 100;
 const MOCK_BESTS = true;   // PLACEHOLDER: fake personal bests so the bars are visible. Set false once a real source exists.
 
 // PLACEHOLDER: converts totalXp -> level (1-100). Replace with the game's real XP table.
@@ -58,6 +58,13 @@ function statCell(valueText, c, mode, cls) {
 }
 
 // ================= LOAD =================
+let rows = [];
+function demoPlayers() {
+  return Array.from({ length: TOP_N }, (_, i) => ({
+    playerId: 'demo' + i, name: 'Player ' + (i + 1), kills: 4200 - i * 70, deaths: 150 + i * 9, assists: 0,
+    totalXp: 1170000 - i * 15000, characterSkinId: 1, topWeaponId: (i % 12) + 1, topWeaponSkinId: 1,
+    clanTag: ['FT', 'BB', 'XO', ''][i % 4], clanColor: i % 12 }));
+}
 // Finds the array of players anywhere inside the API response
 function extractPlayers(d, depth = 0) {
   if (Array.isArray(d)) return d;
@@ -78,7 +85,7 @@ async function load() {
     const res = await fetch(API_URL);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const d = await res.json();
-    console.log('API response:', d);                 // check the shape in the Console (F12)
+    console.log('API response:', d);
     players = extractPlayers(d);
     if (!players) throw new Error('No player list found in the response');
   } catch (e) {
