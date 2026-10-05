@@ -21,7 +21,7 @@ const CLAN_COLORS = {
 };
 
 // ================= DATA SOURCES (not connected yet) =================
-// Previous bests per clanId: { [clanId]: { kills, memberCount } }  (highest recorded values)
+// Previous bests per clanId: { [clanId]: { kills } }  (highest recorded values)
 async function getClanBests(clans) {
   // TODO: const r = await fetch(`/api/clan-bests?ids=${clans.map(c => c.clanId).join(',')}`); return r.json();
   return {};   // no data yet -> every bar shows as full with "NEW"
@@ -78,7 +78,7 @@ async function load() {
   const bests = await getClanBests(clans);
   rows = clans.map((c, i) => {
     const b = bests[c.clanId];
-    return { rank: i + 1, c, kc: compare(c.kills, b?.kills), mc: compare(c.memberCount, b?.memberCount) };
+    return { rank: i + 1, c, kc: compare(c.kills, b?.kills), fillPct: c.memberCap > 0 ? Math.min(100, c.memberCount / c.memberCap * 100) : 0 };
   });
   $('status').textContent = `Top ${rows.length} clans by kills.`;
   render();
@@ -95,7 +95,7 @@ function render() {
       <span class="rank">${r.rank}</span>
       <span class="pname" title="${esc(c.name)}">${esc(c.name)}</span>
       ${statCell(fmt(c.kills), r.kc, 'b-kills')}
-      ${statCell(`${fmt(c.memberCount)}<small class="muted"> / ${fmt(c.memberCap)}</small>`, r.mc, 'b-members')}
+      <div class="stat"><div class="top"><span>${fmt(c.memberCount)}<small class="muted"> / ${fmt(c.memberCap)}</small></span><span class="pct new">${r.fillPct.toFixed(0)}%</span></div><div class="bar b-members"><i style="width:${r.fillPct.toFixed(1)}%"></i></div></div>
       <span class="clan" style="color:${col}">${esc(c.tag)}</span>
       <span class="status-ic"><img src="images/icons/${open}.png" alt="${open === 'open' ? 'Open to join' : 'Closed to join'}" title="${open === 'open' ? 'Open to join' : 'Closed to join'}" onerror="${PH}"></span>
       <button class="inspect" data-id="${esc(c.clanId)}" aria-label="Clan details for ${esc(c.name)}"><img src="images/icons/inspect.png" alt="" onerror="${PH}"></button>
@@ -130,7 +130,7 @@ $('xlsx').onclick = () => {
   if (!window.XLSX) return alert('XLSX library failed to load.');
   const pc = c => c.pct == null ? 'NEW' : +c.pct.toFixed(1);
   const data = rows.map(r => ({ Rank: r.rank, Clan: r.c.name, Tag: r.c.tag, ClanId: r.c.clanId, Kills: r.c.kills, 'Kills vs best %': pc(r.kc),
-    Members: r.c.memberCount, MemberCap: r.c.memberCap, 'Members vs best %': pc(r.mc), OpenToJoin: r.c.openJoin ? 'Yes' : 'No' }));
+    Members: r.c.memberCount, MemberCap: r.c.memberCap, 'Members full %': +r.fillPct.toFixed(1), OpenToJoin: r.c.openJoin ? 'Yes' : 'No' }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Clans Top ' + TOP_N);
   XLSX.writeFile(wb, `blast-buddies-clans-${new Date().toISOString().slice(0, 10)}.xlsx`);
