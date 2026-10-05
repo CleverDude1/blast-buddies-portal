@@ -4,15 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Maps | Blast Buddies Tracker</title>
-<link rel="icon" href="images/logo.png">
+<link rel="icon" href="images/icons/home.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body data-page="maps">
 <template id="page-content">
-<section class="panel"><h1 class="page-title">Maps</h1><p class="muted">Every map and its stats. Coming soon.</p></section>
+<section class="panel"><h1 class="page-title">Maps</h1><p class="muted">Pick a map to see its details.</p></section>
+<div class="map-grid" id="maps"></div>
+<dialog id="dlg"><button class="pill dlg-close" id="dlgClose">Close</button><div id="dlgBody"></div></dialog>
 </template>
 <script src="js/layout.js"></script>
+<script src="js/maps.js"></script>
 </body>
 </html>
