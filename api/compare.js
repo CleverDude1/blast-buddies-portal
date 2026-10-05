@@ -102,7 +102,7 @@ async function seriesClans(a, b) {
   return { clan: { a: ra, b: rb } };
 }
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   try {
     const { mode, type, a, b } = req.query;
@@ -121,4 +121,4 @@ module.exports = async (req, res) => {
     console.error(e);
     res.status(500).json({ error: e.message });
   }
-};
+}
