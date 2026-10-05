@@ -10,10 +10,19 @@ export default async function handler(req, res) {
             }
         );
 
-        const data = await response.json();
+        const text = await response.text();
+
+        let data;
+
+        try {
+            data = JSON.parse(text);
+        } catch {
+            data = text;
+        }
 
         return res.status(response.status).json({
             success: response.ok,
+            blastBuddiesStatus: response.status,
             source: "blast-buddies",
             leaderboard: "day",
             retrievedAt: new Date().toISOString(),
@@ -23,7 +32,8 @@ export default async function handler(req, res) {
     } catch (error) {
         return res.status(500).json({
             success: false,
-            error: error.message
+            error: error.message,
+            stack: error.stack
         });
     }
 }
