@@ -1,4 +1,4 @@
-```js
+
 export default async function handler(req, res) {
     try {
         const season = req.query.season || "3";
@@ -39,4 +39,4 @@ export default async function handler(req, res) {
         });
     }
 }
-```
+
