@@ -1,10 +1,8 @@
 // ================= CONFIG =================
 const API_URL = '/api/leaderboard-day';
 const TOP_N = 50;
-const MAX_LEVEL = 100;
 
-// PLACEHOLDER: converts totalXp -> level (1-100). Replace with the game's real XP table.
-const xpToLevel = xp => Math.min(MAX_LEVEL, Math.max(1, Math.floor(xp / 12000)));
+// xpToLevel() and MAX_LEVEL come from js/level.js
 
 // Clan color number -> CSS color. Colors not listed fall back to white. Add more as you identify them.
 const CLAN_COLORS = {
