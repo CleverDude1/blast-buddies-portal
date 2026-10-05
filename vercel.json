@@ -1,4 +1,4 @@
 {
   "crons": [{ "path": "/api/collect", "schedule": "0 * * * *" }],
-  "functions": { "api/collect.js": { "maxDuration": 60 } }
+ 
 }
