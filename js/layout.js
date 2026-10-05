@@ -2,7 +2,7 @@
 const CONFIG = {
   siteName: 'Blast Buddies Tracker',
   currentSeason: 1,                                // change this number each season
-  discordInvite: 'https://discord.gg/7QWQKTzUDH', // put your invite link here
+  discordInvite: 'https://discord.gg/YOUR-INVITE', // put your invite link here
   languages: [['en','English'],['es','Español'],['fr','Français'],['de','Deutsch'],['pt','Português']]
 };
 const NAV = [
@@ -11,6 +11,10 @@ const NAV = [
   ['weekly','Weekly Rankings','weekly-rankings.html'],
   ['season',`Ranked Season ${CONFIG.currentSeason}`,'ranked-season.html'],
   ['clans','Clan Rankings','clan-rankings.html'],
+  ['compare','Compare','compare.html'],
+  ['player-updates','Player Updates','player-updates.html'],
+  ['clan-updates','Clan Updates','clan-updates.html'],
+  ['statistics','Statistics','statistics.html'],
   ['maps','Maps','maps.html'],
   ['weapons','Weapons','weapons.html'],
   ['abilities','Abilities','abilities.html'],
