@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compare | Blast Buddies Tracker</title>
+<link rel="icon" href="images/icons/home.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="compare">
+<template id="page-content">
+<section class="panel">
+  <h1 class="page-title">Compare</h1>
+  <p class="muted">Compare two players or two clans. Anyone who appears on a leaderboard (daily, weekly or the current ranked season) can be compared.</p>
+  <div class="cmp-tabs" id="typeTabs"><button class="on" data-type="player">Players</button><button data-type="clan">Clans</button></div>
+  <div class="cmp-pick">
+    <label><i class="dot a"></i><input id="inA" list="opts" placeholder="First player" autocomplete="off" aria-label="First"></label>
+    <span class="vs">VS</span>
+    <label><i class="dot b"></i><input id="inB" list="opts" placeholder="Second player" autocomplete="off" aria-label="Second"></label>
+    <button class="pill" id="go">Compare</button>
+  </div>
+  <datalist id="opts"></datalist>
+  <p class="cmp-msg" id="msg"></p>
+</section>
+<div id="result"></div>
+</template>
+<script src="js/layout.js"></script>
+<script src="js/compare.js"></script>
+</body>
+</html>
