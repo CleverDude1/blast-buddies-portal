@@ -2,7 +2,6 @@
 const API_URL = '/api/leaderboard-day';
 const TOP_N = 50;
 const MAX_LEVEL = 100;
-const MOCK_BESTS = true;   // PLACEHOLDER: fake personal bests so the bars are visible. Set false once a real source exists.
 
 // PLACEHOLDER: converts totalXp -> level (1-100). Replace with the game's real XP table.
 const xpToLevel = xp => Math.min(MAX_LEVEL, Math.max(1, Math.floor(xp / 12000)));
@@ -14,16 +13,9 @@ const CLAN_COLORS = {0:'#ffffff',1:'#ff4d4d',2:'#4dff6a',3:'#4da6ff',4:'#ffd84d'
 // Personal bests per playerId: { [playerId]: { kills, deaths, kdr } }
 //   kills = highest daily kills, deaths = LOWEST daily deaths, kdr = highest daily KDR.
 async function getPersonalBests(players) {
-  if (MOCK_BESTS) {
-    const out = {};
-    players.forEach((p, i) => {            // deterministic fake numbers per player
-      const f = n => 0.6 + ((i * 37 + n * 17) % 100) / 100;
-      out[p.playerId] = { kills: Math.round(p.kills * f(1)), deaths: Math.round(p.deaths * f(2)), kdr: +(kdrOf(p) * f(3)).toFixed(2) };
-    });
-    return out;
-  }
-  // TODO: const r = await fetch(`https://YOUR-API/personal-bests?ids=${players.map(p=>p.playerId).join(',')}`); return r.json();
-  return {};   // no data -> every bar shows as full / "NEW"
+  // TODO: connect the real source, e.g.
+  // const r = await fetch(`/api/personal-bests?ids=${players.map(p => p.playerId).join(',')}`); return r.json();
+  return {};   // no data yet -> every bar shows as full with "NEW"
 }
 // TODO: clan API. Should return { color: <number> } for a clan tag.
 async function getClanInfo(tag) { return null; }
@@ -104,7 +96,7 @@ async function load() {
   });
   $('status').innerHTML = demo
     ? '<b>Demo data:</b> the API could not be reached from this page (network or CORS), so sample players are shown.'
-    : `Top ${rows.length} players today.` + (MOCK_BESTS ? ' <b>Bars use placeholder personal bests.</b>' : '');
+    : `Top ${rows.length} players today.`;
   render();
 }
 
