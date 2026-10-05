@@ -58,20 +58,29 @@ function statCell(valueText, c, mode, cls) {
 }
 
 // ================= LOAD =================
-let rows = [];
-function demoPlayers() {
-  return Array.from({ length: TOP_N }, (_, i) => ({
-    playerId: 'demo' + i, name: 'Player ' + (i + 1), kills: 4200 - i * 70, deaths: 150 + i * 9, assists: 0,
-    totalXp: 1170000 - i * 15000, characterSkinId: 1, topWeaponId: (i % 12) + 1, topWeaponSkinId: 1,
-    clanTag: ['FT', 'BB', 'XO', ''][i % 4], clanColor: i % 12 }));
+// Finds the array of players anywhere inside the API response
+function extractPlayers(d, depth = 0) {
+  if (Array.isArray(d)) return d;
+  if (!d || typeof d !== 'object' || depth > 3) return null;
+  for (const v of Object.values(d)) {
+    if (Array.isArray(v) && v.length && typeof v[0] === 'object' && ('playerId' in v[0] || 'name' in v[0])) return v;
+  }
+  for (const v of Object.values(d)) {
+    const found = extractPlayers(v, depth + 1);
+    if (found) return found;
+  }
+  return null;
 }
+
 async function load() {
   let players, demo = false;
   try {
     const res = await fetch(API_URL);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const d = await res.json();
-    players = Array.isArray(d) ? d : (d.data || d.leaderboard || d.players || d.entries || d.results || Object.values(d).find(Array.isArray) || []);
+    console.log('API response:', d);                 // check the shape in the Console (F12)
+    players = extractPlayers(d);
+    if (!players) throw new Error('No player list found in the response');
   } catch (e) {
     console.warn('API failed:', e); players = demoPlayers(); demo = true;
   }
