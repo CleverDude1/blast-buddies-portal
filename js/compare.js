@@ -201,6 +201,7 @@ function dateTicks(x0, x1, n = 6) {
   return Array.from({ length: n }, (_, i) => { const t = x0 + (x1 - x0) * i / (n - 1); return { t, l: x1 - x0 <= 2 * DAY ? fmtHour(t) : fmtDate(t) }; });
 }
 // ----- point builders: rows are sorted oldest -> newest and carry .t (ms) -----
+const GAP = 90 * 60e3;   // snapshots are hourly: a line is only extended/carried across a gap shorter than this
 const lastVal = (rows, m) => { for (let i = rows.length - 1; i >= 0; i--) { const v = val(rows[i], m); if (v != null) return v; } return null; };
 function periodPts(rows, start, end, m, now) {          // one day/week, value climbing from 0
   const inP = rows.filter(r => r.t >= start && r.t < end);
@@ -208,7 +209,7 @@ function periodPts(rows, start, end, m, now) {          // one day/week, value c
   if (!pts.length) return [];
   if (m !== 'kdr') pts.unshift([start, 0]);
   const xe = Math.min(now, end), last = pts[pts.length - 1];
-  if (last[0] < xe) pts.push([xe, last[1]]);
+  if (last[0] < xe && xe - last[0] <= GAP) pts.push([xe, last[1]]);
   return pts;
 }
 function finalPts(rows, starts, len, m) {               // last value of every period
@@ -220,9 +221,9 @@ function windowPts(rows, from, m, now) {                // plain history since `
   const before = rows.filter(r => r.t < from), inW = rows.filter(r => r.t >= from);
   const pts = inW.map(r => [r.t, val(r, m)]).filter(p => p[1] != null);
   const carry = before.length ? val(before[before.length - 1], m) : null;
-  if (carry != null) pts.unshift([from, carry]);
+  if (carry != null && from - before[before.length - 1].t <= GAP) pts.unshift([from, carry]);
   if (!pts.length) return [];
-  if (pts[pts.length - 1][0] < now) pts.push([now, pts[pts.length - 1][1]]);
+  if (pts[pts.length - 1][0] < now && now - pts[pts.length - 1][0] <= GAP) pts.push([now, pts[pts.length - 1][1]]);
   return pts;
 }
 function niceTicks(min, max, n = 5) {
@@ -249,7 +250,9 @@ function lineChart(el, series, { x0, x1, ticks, zero }) {
     let d = `M${X(s.pts[0][0]).toFixed(1)},${Y(s.pts[0][1]).toFixed(1)}`;
     for (let i = 1; i < s.pts.length; i++) d += ` H${X(s.pts[i][0]).toFixed(1)} V${Y(s.pts[i][1]).toFixed(1)}`;
     const e = s.pts[s.pts.length - 1];
-    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"/><circle cx="${X(e[0])}" cy="${Y(e[1])}" r="3.5" fill="${s.color}"/>`;
+    g += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"/>`;
+    if (s.pts.length <= 200) g += s.pts.map(p => `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="2.2" fill="${s.color}"/>`).join('');   // one dot per snapshot
+    g += `<circle cx="${X(e[0])}" cy="${Y(e[1])}" r="3.5" fill="${s.color}"/>`;
   }
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg>`;
 }
