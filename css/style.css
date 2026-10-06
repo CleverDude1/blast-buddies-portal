@@ -150,6 +150,18 @@ dialog h3{font-size:24px;margin-bottom:4px}
 .chart-empty{padding:70px 0;text-align:center;color:var(--muted)}
 .gr-note{max-width:1400px;margin:0 auto 24px;color:var(--muted);font-size:12px}
 @media(max-width:700px){.cmp-row{grid-template-columns:1fr 1fr;gap:10px}.cmp-row .mid{grid-column:1/-1;order:-1}.gr-grid{grid-template-columns:1fr}}
+/* ---- podium ---- */
+.pd-row{grid-template-columns:56px minmax(150px,1.5fr) minmax(130px,1.2fr) repeat(4,52px) minmax(130px,1.1fr) 76px 150px 64px;gap:12px}
+.pd-row .c{justify-self:center;text-align:center;font-weight:800}
+.pd-row .c.zero{opacity:.3;font-weight:600}
+.pd-row .hd{width:34px;height:34px;justify-self:center}
+.pd-sub{margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pd-sub select,.pd-sub input{height:40px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);padding:0 12px;font:500 14px 'Inter',sans-serif}
+.b-medals i{background:linear-gradient(90deg,#d9921f,#ffd24d)}
+.pd-hist{display:grid;gap:6px;margin-top:14px;max-height:280px;overflow:auto}
+.pd-hist div{display:flex;justify-content:space-between;background:var(--card2);border-radius:10px;padding:8px 12px;font-size:14px}
+.pd-hist span{color:var(--muted)}
+@media(max-width:700px){.pd-row{min-width:0}}
 /* ---- weapons ---- */
 .weapon-panel{padding:24px}
 .weapon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
