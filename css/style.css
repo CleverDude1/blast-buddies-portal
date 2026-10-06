@@ -64,6 +64,7 @@ code{background:var(--card2);padding:2px 8px;border-radius:6px;font-size:14px}
 .b-lvl i{background:linear-gradient(90deg,#d9921f,#ffd24d)}
 .b-kills i{background:linear-gradient(90deg,#2f8f3f,#6fdc7a)}
 .b-deaths i{background:linear-gradient(90deg,#1f4fb0,#4da6ff)}
+.b-trophies i{background:linear-gradient(90deg,#7a35b5,#c88bff)}
 .b-kdr i{background:linear-gradient(90deg,#a02323,#ff5b5b)}
 .weapon img{width:56px;height:56px;object-fit:contain;display:block}
 .clan{font-weight:800;font-size:17px;letter-spacing:.5px}
