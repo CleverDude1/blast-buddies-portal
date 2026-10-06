@@ -82,23 +82,36 @@ async function compareClans(a, b) {
 }
 
 // ---------- history for the graphs ----------
-const histRows = (table, idCol, id, extra, days, select) =>
-  rest(`${table}?select=${select}&${idCol}=eq.${id}&${extra}observed_at=gte.${since(days)}&order=observed_at.desc`, { all: true, max: 6000 })
-    .then(rows => rows.reverse());   // newest rows are kept if the cap is hit; return oldest -> newest
+// Reads EVERY hourly snapshot from entry_snapshots (filled by supabase/hourly-snapshots.sql).
+// If a board has no snapshots yet, falls back to the change-only history tables.
+const snapRows = async (kind, season, id, days, cols, max) =>
+  (await rest(`entry_snapshots?select=taken_at,${cols}&kind=eq.${kind}&season=eq.${season}&entity_id=eq.${id}&taken_at=gte.${since(days)}&order=taken_at.desc`,
+    { all: true, max })).reverse().map(({ taken_at, ...r }) => ({ observed_at: taken_at, ...r }));   // oldest -> newest
+
+async function playerRows(board, season, days, id) {
+  const rows = await snapRows(board, season, id, days, 'kills,deaths,trophies,ranked_wins,ranked_losses', 6000);
+  if (rows.length) return rows;
+  return rest(`leaderboard_history?select=observed_at,kills,deaths,trophies,ranked_wins,ranked_losses&player_id=eq.${id}&board=eq.${board}&season=eq.${season}&observed_at=gte.${since(days)}&order=observed_at.desc`, { all: true, max: 6000 })
+    .then(r => r.reverse());
+}
+async function clanRows(days, id) {
+  const rows = await snapRows('clan', 0, id, days, 'kills,member_count', 9000);
+  if (rows.length) return rows;
+  return rest(`clan_history?select=observed_at,kills,member_count&clan_id=eq.${id}&observed_at=gte.${since(days)}&order=observed_at.desc`, { all: true, max: 9000 })
+    .then(r => r.reverse());
+}
 
 async function seriesPlayers(a, b) {
-  const sel = 'observed_at,kills,deaths,trophies,ranked_wins,ranked_losses';
   const plan = { day: ['day', 0, 40], week: ['week', 0, 100], ranked: ['ranked', RANKED_SEASON, 120] };   // [board, season, days back]
   const out = {};
   await Promise.all(Object.entries(plan).map(async ([key, [board, season, days]]) => {
-    const [ra, rb] = await Promise.all([a, b].map(id => histRows('leaderboard_history', 'player_id', id, `board=eq.${board}&season=eq.${season}&`, days, sel)));
+    const [ra, rb] = await Promise.all([a, b].map(id => playerRows(board, season, days, id)));
     out[key] = { a: ra, b: rb };
   }));
   return out;
 }
 async function seriesClans(a, b) {
-  const sel = 'observed_at,kills,member_count';
-  const [ra, rb] = await Promise.all([a, b].map(id => histRows('clan_history', 'clan_id', id, '', 365, sel)));
+  const [ra, rb] = await Promise.all([a, b].map(id => clanRows(365, id)));
   return { clan: { a: ra, b: rb } };
 }
 
