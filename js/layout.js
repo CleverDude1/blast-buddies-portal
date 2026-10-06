@@ -1,8 +1,8 @@
 // Shared layout: builds the sidebar + top bar on every page, so edits happen in ONE place.
 const CONFIG = {
   siteName: 'Blast Buddies Tracker',
-  currentSeason: 1,                                // change this number each season
-  discordInvite: 'https://discord.gg/7QWQKTzUDH', // put your invite link here
+  currentSeason: 3,                                // change this number each season
+  discordInvite: 'https://discord.gg/YOUR-INVITE', // put your invite link here
   languages: [['en','English'],['es','Español'],['fr','Français'],['de','Deutsch'],['pt','Português']]
 };
 const NAV = [
