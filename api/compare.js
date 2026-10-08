@@ -1,40 +1,65 @@
-// Read-only endpoint for the Compare page. Reads Supabase with the SERVICE ROLE key (kept server-side, never in the browser).
+// Read-only endpoint for the Compare page.
 //   /api/compare?mode=options&type=player|clan        -> who can be compared
-//   /api/compare?mode=compare&type=...&a=ID&b=ID      -> current values, ranks, averages
+//   /api/compare?mode=compare&type=...&a=ID&b=ID      -> current values + ranks + averages
 //   /api/compare?mode=series&type=...&a=ID&b=ID       -> history rows for the graphs
-// Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY (the sb_secret_... key), RANKED_SEASON (optional, default 3)
-const RANKED_SEASON = Number(process.env.RANKED_SEASON || 3);   // change when a new ranked season starts
-const DAY = 864e5;
-const ID_RE = /^[A-Za-z0-9_-]{4,40}$/;
+//
+// CURRENT VALUES come straight from the live APIs (the same ones the leaderboard pages use).
+// Only if a player/clan is NOT in the live list do we fall back to the newest stored JSON snapshot (raw_snapshots).
+// Averages and graphs come from Supabase history. Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY
+import { DAY, ID_RE, RANKED_SEASON, URLS, rest, inList, since, fetchLive, extractList, normPlayer, normClan } from './_lib/shared.js';
 
-// day/week boards are stored with season 0, ranked with the current season number
+// day/week boards are stored with season 0, ranked with the current season number (used by averages + history)
 const BOARD_FILTER = `or=${encodeURIComponent(`(and(board.in.(day,week),season.eq.0),and(board.eq.ranked,season.eq.${RANKED_SEASON}))`)}`;
-const STATE_COLS = 'board,player_id,rank,kills,deaths,trophies,ranked_wins,ranked_losses,last_seen_at';
-const CLAN_COLS = 'clan_id,name,tag,color,member_count,member_cap,open_join,kills,last_seen_at';
 
-// PostgREST helper. `all` pages through results (Supabase returns max 1000 rows per request).
-async function rest(path, { all = false, max = 1000 } = {}) {
-  const base = process.env.SUPABASE_URL, key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!base || !key) throw new Error('Missing SUPABASE_URL or SUPABASE_SECRET_KEY');
-  // New sb_secret_ keys go in the apikey header only; old JWT-style keys (eyJ...) also go in Authorization.
-  const auth = key.startsWith('eyJ') ? { Authorization: `Bearer ${key}` } : {};
-  const rows = [];
-  for (let from = 0; ; from += 1000) {
-    const r = await fetch(`${base}/rest/v1/${path}`, {
-      headers: { apikey: key, ...auth, 'Range-Unit': 'items', Range: `${from}-${from + 999}` },
-    });
-    if (!r.ok) throw new Error(`Supabase ${r.status}: ${(await r.text()).slice(0, 200)}`);
-    const page = await r.json();
-    rows.push(...page);
-    if (!all || page.length < 1000 || rows.length >= max) break;
-  }
-  return rows;
+async function liveBoards() {
+  const boards = {};
+  await Promise.all(['day', 'week', 'ranked'].map(async b => {
+    try {
+      const list = extractList(await fetchLive(URLS[b]), 'playerId');
+      if (!list) throw new Error('no player list in response');
+      boards[b] = list.map(normPlayer);
+    } catch (e) { console.error(`live ${b} failed:`, e.message); boards[b] = []; }
+  }));
+  return boards;
 }
-const inList = ids => `in.(${ids.join(',')})`;
-const since = days => encodeURIComponent(new Date(Date.now() - days * DAY).toISOString());
+async function liveClans() {
+  try {
+    const list = extractList(await fetchLive(URLS.clan), 'clanId');
+    if (!list) throw new Error('no clan list in response');
+    return list.map(normClan);
+  } catch (e) { console.error('live clans failed:', e.message); return []; }
+}
+
+// ---------- fallback: newest stored JSON snapshots (raw_snapshots) ----------
+// Scans recent stored responses (newest first) for the ids we could not find live.
+async function rawFind(url, idKey, ids) {
+  const found = {}, want = new Set(ids);
+  for (let off = 0; off < 40 && want.size; off += 5) {
+    let rows;
+    try { rows = await rest(`raw_snapshots?select=fetched_at,payload&url=eq.${encodeURIComponent(url)}&order=fetched_at.desc&limit=5&offset=${off}`); }
+    catch (e) { console.error('raw fallback failed:', e.message); break; }
+    for (const r of rows) {
+      for (const e of extractList(r.payload, idKey) || []) {
+        if (want.has(e[idKey])) { found[e[idKey]] = { entry: e, at: r.fetched_at }; want.delete(e[idKey]); }
+      }
+    }
+    if (rows.length < 5) break;
+  }
+  return found;
+}
 
 // ---------- who can be compared ----------
 async function playerOptions() {
+  const boards = await liveBoards(), m = new Map();
+  for (const [b, rows] of Object.entries(boards)) for (const r of rows) {
+    if (!ID_RE.test(r.player_id || '')) continue;
+    const o = m.get(r.player_id) || { id: r.player_id, name: r.name || r.player_id, tag: r.clan_tag || '', boards: [] };
+    o.boards.push(b); m.set(r.player_id, o);
+  }
+  if (m.size) return [...m.values()].sort((x, y) => x.name.localeCompare(y.name));
+  return playerOptionsDb();                                 // live APIs down: use what was stored
+}
+async function playerOptionsDb() {
   const rows = await rest(`leaderboard_state?select=player_id,board&${BOARD_FILTER}`, { all: true, max: 5000 });
   const boards = new Map();
   for (const r of rows) { if (!boards.has(r.player_id)) boards.set(r.player_id, new Set()); boards.get(r.player_id).add(r.board); }
@@ -46,7 +71,9 @@ async function playerOptions() {
   return ids.map(id => ({ id, name: names.get(id)?.name || id, tag: names.get(id)?.clan_tag || '', boards: [...boards.get(id)] }))
     .sort((x, y) => x.name.localeCompare(y.name));
 }
-async function clanOptions() {   // same 50 clans as the Clan Rankings page
+async function clanOptions() {   // same top 50 (by kills) as the Clan Rankings page
+  const live = (await liveClans()).filter(c => ID_RE.test(c.clan_id || '')).sort((x, y) => (y.kills ?? -1) - (x.kills ?? -1)).slice(0, 50);
+  if (live.length) return live.map(c => ({ id: c.clan_id, name: c.name || c.clan_id, tag: c.tag || '', kills: c.kills }));
   const rows = await rest(`clans?select=clan_id,name,tag,kills&order=kills.desc.nullslast&limit=50`);
   return rows.map(c => ({ id: c.clan_id, name: c.name || c.clan_id, tag: c.tag || '', kills: c.kills }));
 }
@@ -54,31 +81,37 @@ async function clanOptions() {   // same 50 clans as the Clan Rankings page
 // ---------- current values + averages ----------
 async function comparePlayers(a, b) {
   const pair = inList([a, b]);
-  const [pop, mine, avgs, info] = await Promise.all([
-    rest(`leaderboard_state?select=${STATE_COLS}&${BOARD_FILTER}&order=rank.asc.nullslast`, { all: true, max: 3000 }),
-    rest(`leaderboard_state?select=${STATE_COLS}&player_id=${pair}&${BOARD_FILTER}`),
-    rest(`player_board_averages?player_id=${pair}&${BOARD_FILTER}`),
-    rest(`players?select=player_id,name,clan_tag,clan_color&player_id=${pair}`),
+  const boards = await liveBoards(), fallback = {};
+  await Promise.all(['day', 'week', 'ranked'].map(async key => {
+    fallback[key] = {};
+    const missing = [a, b].filter(id => !boards[key].some(r => r.player_id === id));
+    if (!missing.length) return;
+    const found = await rawFind(URLS[key], 'playerId', missing);       // not live -> newest stored JSON
+    for (const id of missing) if (found[id]) fallback[key][id === a ? 'a' : 'b'] = { ...normPlayer(found[id].entry, null), _at: found[id].at };
+  }));
+  const [averages, dbInfo] = await Promise.all([
+    rest(`player_board_averages?player_id=${pair}&${BOARD_FILTER}`).catch(e => { console.error('averages failed:', e.message); return []; }),
+    rest(`players?select=player_id,name,clan_tag,clan_color&player_id=${pair}`).catch(() => []),
   ]);
-  const boards = { day: [], week: [], ranked: [] }, seen = new Set();
-  for (const r of [...mine, ...pop]) {            // make sure both players are included even if the board is huge
-    const k = `${r.board}|${r.player_id}`;
-    if (!seen.has(k) && boards[r.board]) { seen.add(k); boards[r.board].push(r); }
-  }
-  const who = id => { const p = info.find(x => x.player_id === id); return { id, name: p?.name || id, tag: p?.clan_tag || '', color: p?.clan_color ?? null }; };
-  return { type: 'player', season: RANKED_SEASON, info: { a: who(a), b: who(b) }, boards, averages: avgs };
+  const all = [...Object.values(boards).flat(), ...Object.values(fallback).flatMap(f => Object.values(f))];
+  const who = id => {
+    const hit = all.find(r => r.player_id === id), p = dbInfo.find(x => x.player_id === id);
+    return { id, name: hit?.name || p?.name || id, tag: hit?.clan_tag ?? p?.clan_tag ?? '', color: hit?.clan_color ?? p?.clan_color ?? null };
+  };
+  return { type: 'player', season: RANKED_SEASON, info: { a: who(a), b: who(b) }, boards, fallback, averages };
 }
 async function compareClans(a, b) {
   const pair = inList([a, b]);
-  const [pop, mine, avgs] = await Promise.all([
-    rest(`clans?select=${CLAN_COLS}&order=kills.desc.nullslast&limit=50`),
-    rest(`clans?select=${CLAN_COLS}&clan_id=${pair}`),
-    rest(`clan_board_averages?clan_id=${pair}`),
-  ]);
-  const seen = new Set(), rows = [];
-  for (const r of [...mine, ...pop]) if (!seen.has(r.clan_id)) { seen.add(r.clan_id); rows.push(r); }
-  const who = id => { const c = rows.find(x => x.clan_id === id); return { id, name: c?.name || id, tag: c?.tag || '' }; };
-  return { type: 'clan', info: { a: who(a), b: who(b) }, pop: rows, averages: avgs };
+  const pop = await liveClans(), fallback = {};
+  const missing = [a, b].filter(id => !pop.some(c => c.clan_id === id));
+  if (missing.length) {
+    const found = await rawFind(URLS.clan, 'clanId', missing);
+    for (const id of missing) if (found[id]) fallback[id === a ? 'a' : 'b'] = { ...normClan(found[id].entry), _at: found[id].at };
+  }
+  const averages = await rest(`clan_board_averages?clan_id=${pair}`).catch(e => { console.error('averages failed:', e.message); return []; });
+  const all = [...pop, ...Object.values(fallback)];
+  const who = id => { const c = all.find(x => x.clan_id === id); return { id, name: c?.name || id, tag: c?.tag || '' }; };
+  return { type: 'clan', info: { a: who(a), b: who(b) }, pop, fallback, averages };
 }
 
 // ---------- history for the graphs ----------
