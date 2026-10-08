@@ -58,8 +58,8 @@ function pctHtml(pct, mode) {
   const good = mode === 'high' ? pct >= 0 : pct <= 0;
   return `<span class="pct ${good ? 'good' : 'bad'}">${pct > 0 ? '+' : ''}${pct.toFixed(1)}%</span>`;
 }
-function statCell(valueText, c, mode, cls) {
-  return `<div class="stat"><div class="top"><span>${valueText}</span>${pctHtml(c.pct, mode)}</div><div class="bar ${cls}"><i style="width:${(c.fill * 100).toFixed(1)}%"></i></div></div>`;
+function statCell(valueText, c, mode, cls, dl = '') {
+  return `<div class="stat"><div class="top"><span>${valueText}</span>${pctHtml(c.pct, mode)}</div><div class="bar ${cls}"><i style="width:${(c.fill * 100).toFixed(1)}%"></i></div>${dl}</div>`;
 }
 
 // ================= LOAD =================
@@ -84,6 +84,7 @@ function extractPlayers(d, depth = 0) {
   return null;
 }
 
+let isDemo = false;
 async function load() {
   let players, demo = false;
   try {
@@ -104,14 +105,25 @@ async function load() {
   rows = players.map((p, i) => {
     const b = bests[p.playerId], kdr = kdrOf(p), level = xpToLevel(p.totalXp);
     const color = clanInfo[p.clanTag]?.color ?? p.clanColor;
-    return { rank: i + 1, p, level, kdr, color,
+    return { rank: i + 1, hm: null, p, level, kdr, color,
       kc: compare(p.kills, b?.kills, 'high'), dc: compare(p.deaths, b?.deaths, 'low'), rc: compare(kdr, b?.kdr, 'high') };
   });
-  $('status').innerHTML = demo
+  isDemo = demo;
+  await applyHourly();
+}
+
+// Loads the snapshot to compare with (last hour, or since 00:00 UTC), fills in the +/- labels and arrows, and redraws.
+async function applyHourly() {
+  if (!rows.length) return;
+  const prev = isDemo ? null : await HOURLY.loadPrev('day');
+  const hm = HOURLY.marks(prev, rows.map(r => { const p = r.p; return { id: p.playerId, rank: r.rank, vals: { kills: p.kills, deaths: p.deaths, kdr: kdrOf(p) } }; }), { kills: 'high', deaths: 'low', kdr: 'high' }, 'kills');
+  rows.forEach(r => { r.hm = hm ? hm.get(r.p.playerId) : null; });
+  $('status').innerHTML = isDemo
     ? '<b>Demo data:</b> the API could not be reached from this page (network or CORS), so sample players are shown.'
-    : `Top ${rows.length} players today.`;
+    : `Top ${rows.length} players today.` + HOURLY.note(hm);
   render();
 }
+HOURLY.mountToggle(applyHourly);
 
 // ================= RENDER =================
 function render() {
@@ -120,12 +132,12 @@ function render() {
   $('rows').innerHTML = list.map(r => {
     const p = r.p, col = CLAN_COLORS[r.color] || '#ffffff';
     return `<div class="lb-row">
-      <span class="rank">${r.rank}</span>
+      <span class="rank">${r.rank}${r.hm ? r.hm.move : ''}</span>
       <span class="pname" title="${esc(p.name)}">${esc(p.name)}</span>
       <div class="stat"><div class="top"><span>${r.level}</span><span class="pct new">/ ${MAX_LEVEL}</span></div><div class="bar b-lvl"><i style="width:${r.level / MAX_LEVEL * 100}%"></i></div></div>
-      ${statCell(fmt(p.kills), r.kc, 'high', 'b-kills')}
-      ${statCell(fmt(p.deaths), r.dc, 'low', 'b-deaths')}
-      ${statCell(r.kdr.toFixed(2), r.rc, 'high', 'b-kdr')}
+      ${statCell(fmt(p.kills), r.kc, 'high', 'b-kills', r.hm?.d.kills)}
+      ${statCell(fmt(p.deaths), r.dc, 'low', 'b-deaths', r.hm?.d.deaths)}
+      ${statCell(r.kdr.toFixed(2), r.rc, 'high', 'b-kdr', r.hm?.d.kdr)}
       <span class="weapon"><img src="images/weapons/${esc(p.topWeaponId)}.png" alt="Weapon ${esc(p.topWeaponId)}" title="Weapon ${esc(p.topWeaponId)}" onerror="${PH}"></span>
       <span class="clan" style="color:${col}">${p.clanTag ? esc(p.clanTag) : ''}</span>
       <button class="inspect" data-id="${esc(p.playerId)}" aria-label="Player details for ${esc(p.name)}"><img src="images/icons/inspect.png" alt="" onerror="${PH}"></button>
