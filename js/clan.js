@@ -44,8 +44,8 @@ function pctHtml(pct) {
   if (pct == null) return '<span class="pct new">NEW</span>';
   return `<span class="pct ${pct >= 0 ? 'good' : 'bad'}">${pct > 0 ? '+' : ''}${pct.toFixed(1)}%</span>`;
 }
-function statCell(valueText, c, cls) {
-  return `<div class="stat"><div class="top"><span>${valueText}</span>${pctHtml(c.pct)}</div><div class="bar ${cls}"><i style="width:${(c.fill * 100).toFixed(1)}%"></i></div></div>`;
+function statCell(valueText, c, cls, dl = '') {
+  return `<div class="stat"><div class="top"><span>${valueText}</span>${pctHtml(c.pct)}</div><div class="bar ${cls}"><i style="width:${(c.fill * 100).toFixed(1)}%"></i></div>${dl}</div>`;
 }
 // Finds the array of clans anywhere inside the API response
 function extractClans(d, depth = 0) {
@@ -78,11 +78,21 @@ async function load() {
   const bests = await getClanBests(clans);
   rows = clans.map((c, i) => {
     const b = bests[c.clanId];
-    return { rank: i + 1, c, kc: compare(c.kills, b?.kills), fillPct: c.memberCap > 0 ? Math.min(100, c.memberCount / c.memberCap * 100) : 0 };
+    return { rank: i + 1, hm: null, c, kc: compare(c.kills, b?.kills), fillPct: c.memberCap > 0 ? Math.min(100, c.memberCount / c.memberCap * 100) : 0 };
   });
-  $('status').textContent = `Top ${rows.length} clans by kills.`;
+  await applyHourly();
+}
+
+// Loads the snapshot to compare with (last hour, or since 00:00 UTC), fills in the +/- labels and arrows, and redraws.
+async function applyHourly() {
+  if (!rows.length) return;
+  const prev = await HOURLY.loadPrev('clan');
+  const hm = HOURLY.marks(prev, rows.map(r => ({ id: r.c.clanId, rank: r.rank, vals: { kills: r.c.kills, members: r.c.memberCount } })), { kills: 'high', members: 'high' });
+  rows.forEach(r => { r.hm = hm ? hm.get(r.c.clanId) : null; });
+  $('status').textContent = `Top ${rows.length} clans by kills.` + HOURLY.note(hm);
   render();
 }
+HOURLY.mountToggle(applyHourly);
 
 // ================= RENDER =================
 function render() {
@@ -92,10 +102,10 @@ function render() {
     const c = r.c, col = CLAN_COLORS[c.color] || '#ffffff';
     const open = c.openJoin ? 'open' : 'closed';
     return `<div class="lb-row cl-row">
-      <span class="rank">${r.rank}</span>
+      <span class="rank">${r.rank}${r.hm ? r.hm.move : ''}</span>
       <span class="pname" title="${esc(c.name)}">${esc(c.name)}</span>
-      ${statCell(fmt(c.kills), r.kc, 'b-kills')}
-      <div class="stat"><div class="top"><span>${fmt(c.memberCount)}<small class="muted"> / ${fmt(c.memberCap)}</small></span><span class="pct new">${r.fillPct.toFixed(0)}%</span></div><div class="bar b-members"><i style="width:${r.fillPct.toFixed(1)}%"></i></div></div>
+      ${statCell(fmt(c.kills), r.kc, 'b-kills', r.hm?.d.kills)}
+      <div class="stat"><div class="top"><span>${fmt(c.memberCount)}<small class="muted"> / ${fmt(c.memberCap)}</small></span><span class="pct new">${r.fillPct.toFixed(0)}%</span></div><div class="bar b-members"><i style="width:${r.fillPct.toFixed(1)}%"></i></div>${r.hm?.d.members || ''}</div>
       <span class="clan" style="color:${col}">${esc(c.tag)}</span>
       <span class="status-ic"><img src="images/icons/${open}.png" alt="${open === 'open' ? 'Open to join' : 'Closed to join'}" title="${open === 'open' ? 'Open to join' : 'Closed to join'}" onerror="${PH}"></span>
       <button class="inspect" data-id="${esc(c.clanId)}" aria-label="Clan details for ${esc(c.name)}"><img src="images/icons/inspect.png" alt="" onerror="${PH}"></button>
