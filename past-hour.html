@@ -12,10 +12,13 @@
 <body data-page="past-hour">
 <template id="page-content">
 <section class="panel">
-  <h1 class="page-title">Past hour</h1>
+  <h1 class="page-title" id="phTitle">Past hour</h1>
   <p class="muted" id="phWhen">What changed on the leaderboards since the snapshot from about an hour ago.</p>
   <div class="seg" id="phTabs" style="margin-top:16px">
     <button data-b="day" class="on">Daily</button><button data-b="week">Weekly</button><button data-b="ranked">Ranked</button><button data-b="clan">Clans</button>
+  </div>
+  <div class="seg" id="phSpan" style="margin-top:16px">
+    <button data-span="hour">Last hour</button><button data-span="day" title="Since 00:00 UTC">Last day</button>
   </div>
 </section>
 <div class="ph-stats" id="phStats"></div>
