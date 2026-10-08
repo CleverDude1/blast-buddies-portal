@@ -128,17 +128,23 @@ function headCard(info, lead, body) {
     <div class="cmp-names">${nameTag('a', info.a)}${nameTag('b', info.b)}</div>${body}</div>`;
 }
 
+const when = iso => new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+const secHead = (title, notes) => `<div class="cmp-sec">${title}${notes.length ? `<span class="note">${esc(notes.join(' · '))}</span>` : ''}</div>`;
+
+// Values come from the LIVE leaderboard APIs. Someone who is not on the live list shows the newest stored JSON values (fallback) and is marked "last seen".
 function renderPlayers(d) {
   const { a, b } = d.info, lead = { a: 0, b: 0 };
   let body = '';
   for (const key of ['day', 'week', 'ranked']) {
-    const B = BOARDS[key], pop = d.boards[key] || [];
-    const ra = pop.find(r => r.player_id === a.id), rb = pop.find(r => r.player_id === b.id);
-    body += `<div class="cmp-sec">${key === 'ranked' ? `RANKED SEASON ${d.season}` : B.label.toUpperCase()}</div>`;
-    body += cmpRow('Leaderboard position', num(ra?.rank), num(rb?.rank), { dir: 'low', fmt: v => '#' + v, diff: false, bar: false }).html;
+    const B = BOARDS[key], live = d.boards[key] || [], fb = d.fallback?.[key] || {};
+    const la = live.find(r => r.player_id === a.id), lb = live.find(r => r.player_id === b.id);
+    const ra = la || fb.a, rb = lb || fb.b;
+    const notes = [!la && fb.a ? `${a.name}: last seen ${when(fb.a._at)}` : '', !lb && fb.b ? `${b.name}: last seen ${when(fb.b._at)}` : ''].filter(Boolean);
+    body += secHead(key === 'ranked' ? `RANKED SEASON ${d.season}` : B.label.toUpperCase(), notes);
+    body += cmpRow('Leaderboard position', num(la?.rank), num(lb?.rank), { dir: 'low', fmt: v => '#' + v, diff: false, bar: false }).html;
     for (const [m, label, dir] of B.metrics) {
       const row = cmpRow(label, val(ra, m), val(rb, m), { dir, fmt: FMT[m] || compact, dfmt: DFMT[m] || FMT[m] || compact,
-        ra: ra ? rankIn(pop, 'player_id', a.id, m, dir) : null, rb: rb ? rankIn(pop, 'player_id', b.id, m, dir) : null });
+        ra: la ? rankIn(live, 'player_id', a.id, m, dir) : null, rb: lb ? rankIn(live, 'player_id', b.id, m, dir) : null });
       if (row.lead) lead[row.lead]++;
       body += row.html;
     }
@@ -146,14 +152,17 @@ function renderPlayers(d) {
   return headCard(d.info, lead, body);
 }
 function renderClans(d) {
-  const { a, b } = d.info, lead = { a: 0, b: 0 };
-  const ra = d.pop.find(r => r.clan_id === a.id), rb = d.pop.find(r => r.clan_id === b.id);
-  const idx = id => { const i = d.pop.slice().sort((x, y) => (num(y.kills) ?? -1) - (num(x.kills) ?? -1)).findIndex(r => r.clan_id === id); return i < 0 ? null : i + 1; };
-  let body = `<div class="cmp-sec">CLAN LEADERBOARD</div>`;
+  const { a, b } = d.info, lead = { a: 0, b: 0 }, fb = d.fallback || {};
+  const la = d.pop.find(r => r.clan_id === a.id), lb = d.pop.find(r => r.clan_id === b.id);
+  const ra = la || fb.a, rb = lb || fb.b;
+  const sorted = d.pop.slice().sort((x, y) => (num(y.kills) ?? -1) - (num(x.kills) ?? -1));
+  const idx = id => { const i = sorted.findIndex(r => r.clan_id === id); return i < 0 ? null : i + 1; };
+  const notes = [!la && fb.a ? `${a.name}: last seen ${when(fb.a._at)}` : '', !lb && fb.b ? `${b.name}: last seen ${when(fb.b._at)}` : ''].filter(Boolean);
+  let body = secHead('CLAN LEADERBOARD', notes);
   body += cmpRow('Leaderboard position', idx(a.id), idx(b.id), { dir: 'low', fmt: v => '#' + v, diff: false, bar: false }).html;
   for (const [m, label] of [['kills', 'Kills'], ['members', 'Members'], ['fill', 'Capacity filled']]) {
     const row = cmpRow(label, val(ra, m), val(rb, m), { fmt: FMT[m] || compact, dfmt: DFMT[m] || compact,
-      ra: ra ? rankIn(d.pop, 'clan_id', a.id, m, 'high') : null, rb: rb ? rankIn(d.pop, 'clan_id', b.id, m, 'high') : null });
+      ra: la ? rankIn(d.pop, 'clan_id', a.id, m, 'high') : null, rb: lb ? rankIn(d.pop, 'clan_id', b.id, m, 'high') : null });
     if (row.lead) lead[row.lead]++;
     body += row.html;
   }
