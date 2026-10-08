@@ -1,9 +1,26 @@
 // Shared by the leaderboard pages: loads the snapshot from ~1 hour ago and builds the "+2k" labels and the up/down arrows.
 // Everything lives inside HOURLY so it cannot clash with names in the page scripts.
 const HOURLY = (() => {
+  // The chosen comparison is shared by every page (and the sidebar): 'hour' = vs ~1 hour ago, 'day' = vs the first snapshot after 00:00 UTC.
+  const getSpan = () => { try { return localStorage.getItem('hrSpan') === 'day' ? 'day' : 'hour'; } catch (e) { return 'hour'; } };
+  const setSpan = v => { try { localStorage.setItem('hrSpan', v); } catch (e) {} window.dispatchEvent(new Event('hr-span')); };
+  // Adds the "Last hour | Last day" switch to the page toolbar. onChange() is called whenever the choice changes (also from the sidebar).
+  function mountToggle(onChange) {
+    const bar = document.querySelector('.toolbar');
+    if (bar) {
+      const seg = document.createElement('div');
+      seg.className = 'seg'; seg.id = 'spanSeg';
+      seg.innerHTML = '<button data-span="hour">Last hour</button><button data-span="day" title="Since 00:00 UTC">Last day</button>';
+      bar.appendChild(seg);
+      seg.addEventListener('click', e => { const b = e.target.closest('[data-span]'); if (b && b.dataset.span !== getSpan()) setSpan(b.dataset.span); });
+    }
+    const paint = () => document.querySelectorAll('#spanSeg button').forEach(b => b.classList.toggle('on', b.dataset.span === getSpan()));
+    paint();
+    window.addEventListener('hr-span', () => { paint(); onChange(); });
+  }
   async function loadPrev(board) {                     // null if there is no snapshot yet (pages then simply show no changes)
     try {
-      const r = await fetch(`/api/hourly?mode=prev&board=${board}`);
+      const r = await fetch(`/api/hourly?mode=prev&board=${board}&span=${getSpan()}`);
       if (!r.ok) return null;
       const j = await r.json();
       return j && j.entries ? j : null;
@@ -16,6 +33,7 @@ const HOURLY = (() => {
     return String(Math.round(n * 100) / 100);
   };
   const ago = prev => {                                 // the snapshot is "about 1 hour" old, say exactly how old when it is not
+    if (prev.span === 'day') return 'today';
     const m = prev.elapsedMin;
     return m >= 50 && m <= 70 ? '1h' : m < 90 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? ' ' + (m % 60) + 'm' : ''}`;
   };
@@ -55,8 +73,10 @@ const HOURLY = (() => {
       }
       out.set(r.id, { move, d });
     }
-    return { get: id => out.get(id) || { move: '', d: {} }, label, reset };
+    return { get: id => out.get(id) || { move: '', d: {} }, label, reset, span: prev.span, at: prev.at };
   }
-  const note = m => !m ? '' : m.reset ? ' Board just reset, so hourly changes are hidden.' : ` Changes are compared with the snapshot from ${m.label} ago.`;
-  return { loadPrev, marks, short, note };
+  const note = m => !m ? '' : m.reset ? ' Board just reset, so the changes are hidden.'
+    : m.span === 'day' ? ` Changes since the first snapshot of today (${new Date(m.at).toISOString().slice(11, 16)} UTC).`
+    : ` Changes are compared with the snapshot from ${m.label} ago.`;
+  return { loadPrev, marks, short, note, getSpan, setSpan, mountToggle };
 })();
