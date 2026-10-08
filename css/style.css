@@ -195,6 +195,8 @@ dialog h3{font-size:24px;margin-bottom:4px}
 .ph-card span{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:2px}
 .ph-card small{display:block;color:#aab19c;margin-top:6px;font-size:13px}
 .cmp-sec .note{float:right;letter-spacing:0;text-transform:none;font-weight:600;font-size:12px;color:#d9a441}
+.toolbar .seg{margin:0;align-self:center}
+
 /* ---- weapons ---- */
 .weapon-panel{padding:24px}
 .weapon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
