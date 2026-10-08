@@ -37,7 +37,7 @@ async function fetchJson(url, tries = 3) {
 export default async function handler(req, res) {
   // Vercel cron sends "Authorization: Bearer <CRON_SECRET>" automatically when CRON_SECRET is set.
   const secret = process.env.YOU_ACTUAL_CRON_SECRET;
- if (!secret) return res.status(500).json({ error: 'YOU_ACTUAL_CRON_SECRET is not set' });
+ if (!secret) return res.status(500).json({ error: 'YOUR_ACTUAL_CRON_SECRET is not set' });
   if (req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: 'unauthorized' });
 
   const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
