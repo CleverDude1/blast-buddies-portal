@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Past hour | Blast Buddies Tracker</title>
+<link rel="icon" href="images/icons/home.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="past-hour">
+<template id="page-content">
+<section class="panel">
+  <h1 class="page-title">Past hour</h1>
+  <p class="muted" id="phWhen">What changed on the leaderboards since the snapshot from about an hour ago.</p>
+  <div class="seg" id="phTabs" style="margin-top:16px">
+    <button data-b="day" class="on">Daily</button><button data-b="week">Weekly</button><button data-b="ranked">Ranked</button><button data-b="clan">Clans</button>
+  </div>
+</section>
+<div class="ph-stats" id="phStats"></div>
+<div class="board"><div class="board-inner">
+  <div class="lb-row ph-row lb-head"><span style="text-align:center">#</span><span>Name</span><span id="phGainHead">Gain</span><span>Was</span><span>Change</span></div>
+  <div id="phRows"></div>
+</div></div>
+</template>
+<script src="js/layout.js"></script>
+<script src="js/past-hour.js"></script>
+</body>
+</html>
