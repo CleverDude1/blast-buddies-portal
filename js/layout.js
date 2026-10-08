@@ -30,9 +30,12 @@ document.body.insertAdjacentHTML('afterbegin', `
   <a class="brand" href="index.html">
     <img src="images/logo.png" alt="${CONFIG.siteName}" onerror="this.onerror=null;this.src='images/placeholder.png'">
   </a>
-  <nav class="nav">
-    ${NAV.map(([id,label,href]) => `<a href="${href}" class="${id===page?'active':''}">${icon(id)}${label}</a>`).join('')}
-  </nav>
+  <div class="side-scroll">
+    <nav class="nav">
+      ${NAV.map(([id,label,href]) => `<a href="${href}" class="${id===page?'active':''}">${icon(id)}${label}</a>`).join('')}
+    </nav>
+    <section class="hr" id="hr"><h4>PAST HOUR <small id="hrAt"></small></h4><div id="hrBody"><p class="hr-note">Loading...</p></div></section>
+  </div>
 </aside>
 <div class="main">
   <header class="topbar">
@@ -74,3 +77,31 @@ try { const s = localStorage.getItem('lang'); if (s) setFlag(s); } catch (e) {}
 const grid = document.getElementById('explore');
 if (grid) grid.innerHTML = NAV.filter(n => n[0] !== 'home')
   .map(([id,label,href]) => `<a class="card-link" href="${href}">${icon(id)}${label}<i>›</i></a>`).join('');
+
+// ---- "Past hour" panel under the menu (inside a function so its names cannot clash with page scripts) ----
+(() => {
+  const BOARD_LABEL = { day: 'Daily', week: 'Weekly', ranked: 'Ranked', clan: 'Clans' };
+  const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const short = n => { const a = Math.abs(n); return a >= 1e6 ? (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M' : a >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k' : String(Math.round(n)); };
+  const signed = n => (n > 0 ? '+' : n < 0 ? '-' : '') + short(Math.abs(n));
+  const mv = x => x.isNew ? '<span class="mv new">NEW</span>' : x.move > 0 ? `<span class="mv up">▲${x.move}</span>` : x.move < 0 ? `<span class="mv down">▼${-x.move}</span>` : '';
+  let data = null, cur = 'day';
+  const body = document.getElementById('hrBody');
+  function draw() {
+    const tabs = `<div class="hr-tabs">${Object.entries(BOARD_LABEL).map(([k, l]) => `<button data-hr="${k}" class="${k === cur ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    const b = data.boards[cur];
+    if (!b || !b.ok) { body.innerHTML = tabs + '<p class="hr-note">No hourly data for this board yet.</p>'; return; }
+    if (b.reset) { body.innerHTML = tabs + '<p class="hr-note">This board just reset, so there are no hourly changes to show yet.</p>'; return; }
+    const gainers = b.all.filter(x => x.gain > 0).sort((p, q) => q.gain - p.gain).slice(0, 5);
+    const movers = b.all.filter(x => x.move !== 0).sort((p, q) => Math.abs(q.move) - Math.abs(p.move)).slice(0, 4);
+    document.getElementById('hrAt').textContent = b.elapsedMin ? `last ${b.elapsedMin >= 50 && b.elapsedMin <= 70 ? '1h' : b.elapsedMin + 'm'}` : '';
+    body.innerHTML = tabs
+      + `<div class="hr-big"><div><b>${signed(b.totalGain)}</b><span>Total ${e(b.unit)}</span></div><div><b>${b.moved}</b><span>Position changes</span></div></div>`
+      + `<div class="hr-sub">Top gains</div><div class="hr-list">${gainers.map(x => `<div><span>${e(x.name)}</span><span class="dlt up" style="margin:0">+${short(x.gain)}</span></div>`).join('') || '<span class="hr-note">Nobody gained.</span>'}</div>`
+      + `<div class="hr-sub">Position changes</div><div class="hr-list">${movers.map(x => `<div><span>${e(x.name)}</span>${mv(x)}</div>`).join('') || '<span class="hr-note">No one moved.</span>'}</div>`
+      + `<a href="past-hour.html?board=${cur}">Full report &rarr;</a>`;
+  }
+  body.addEventListener('click', ev => { const t = ev.target.closest('[data-hr]'); if (t && data) { cur = t.dataset.hr; draw(); } });
+  fetch('/api/hourly?mode=summary').then(r => r.ok ? r.json() : Promise.reject()).then(d => { data = d; draw(); })
+    .catch(() => { body.innerHTML = '<p class="hr-note">No hourly data yet.</p>'; });
+})();
