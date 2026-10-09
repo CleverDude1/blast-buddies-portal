@@ -10,7 +10,7 @@ const TIERS = ['S', 'A', 'B', 'C', 'D'];
 const ITEMS = {
   maps: ['Arena','Blocktown','Canyon','Favela','Nukeville','Outpost','Prototype','Pyramids','Rooftops','Shipment','SunnyTown'],
   primary: ['Assault','Bow','Burst','Lmg','MAC-10','Shotgun','Sniper','Thompson','UMP-45'],
-  secondary: ['Energy','Flare','Pistol','RayGun','Revolver','Snare'],
+  secondary: ['Energy','Flare','Pistol','RayGun','Revolver','Snare','Knife'],
   grenades: ['BlackHole','Flashbang','Inferno','Shockwave','Smoke','Storm','Updraft','Warp'],
 };
 
