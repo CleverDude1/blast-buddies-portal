@@ -69,7 +69,7 @@
     if (!confirm('You can only vote once. Submit now?')) return;
     busy = true;
     try {
-      const r = await fetch('/api/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tiers: picks }) });
+      const r = await fetch('/api/_lib/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tiers: picks }) });
       const d = await r.json();
       if (d.voted) results(d); else alert(d.error || 'Something went wrong.');
     } catch (x) { alert('Could not reach the server. Please try again.'); }
