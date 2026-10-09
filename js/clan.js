@@ -76,15 +76,23 @@ async function load() {
   }
   clans = [...clans].sort((a, b) => b.kills - a.kills).slice(0, TOP_N);   // ranked by kills
   const bests = await getClanBests(clans);
-  const prev = await HOURLY.loadPrev('clan');   // snapshot from ~1 hour ago (for the +/- labels and arrows)
-  const hm = HOURLY.marks(prev, clans.map((c, i) => ({ id: c.clanId, rank: i + 1, vals: { kills: c.kills, members: c.memberCount } })), { kills: 'high', members: 'high' });
   rows = clans.map((c, i) => {
     const b = bests[c.clanId];
-    return { rank: i + 1, hm: hm ? hm.get(c.clanId) : null, c, kc: compare(c.kills, b?.kills), fillPct: c.memberCap > 0 ? Math.min(100, c.memberCount / c.memberCap * 100) : 0 };
+    return { rank: i + 1, hm: null, c, kc: compare(c.kills, b?.kills), fillPct: c.memberCap > 0 ? Math.min(100, c.memberCount / c.memberCap * 100) : 0 };
   });
+  await applyHourly();
+}
+
+// Loads the snapshot to compare with (last hour, or since 00:00 UTC), fills in the +/- labels and arrows, and redraws.
+async function applyHourly() {
+  if (!rows.length) return;
+  const prev = await HOURLY.loadPrev('clan');
+  const hm = HOURLY.marks(prev, rows.map(r => ({ id: r.c.clanId, rank: r.rank, vals: { kills: r.c.kills, members: r.c.memberCount } })), { kills: 'high', members: 'high' });
+  rows.forEach(r => { r.hm = hm ? hm.get(r.c.clanId) : null; });
   $('status').textContent = `Top ${rows.length} clans by kills.` + HOURLY.note(hm);
   render();
 }
+HOURLY.mountToggle(applyHourly);
 
 // ================= RENDER =================
 function render() {
