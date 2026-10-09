@@ -108,6 +108,7 @@ async function load() {
     return { rank: i + 1, hm: null, p, level, kdr, color,
       kc: compare(p.kills, b?.kills, 'high'), dc: compare(p.deaths, b?.deaths, 'low'), rc: compare(kdr, b?.kdr, 'high') };
   });
+  CLANPOWER.render($('clanPower'), demo ? [] : CLANPOWER.top3(players.map(p => ({ tag: p.clanTag, color: p.clanColor, score: p.kills }))), 'kills', CLAN_COLORS);
   isDemo = demo;
   await applyHourly();
 }
