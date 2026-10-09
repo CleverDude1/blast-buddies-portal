@@ -85,7 +85,6 @@ function extractPlayers(d, depth = 0) {
   return null;
 }
 
-let isDemo = false;
 async function load() {
   let players, demo = false;
   try {
@@ -102,29 +101,20 @@ async function load() {
   const bests = await getPersonalBests(players);
   const tags = [...new Set(players.map(p => p.clanTag).filter(Boolean))];
   const clanInfo = Object.fromEntries(await Promise.all(tags.map(async t => [t, await getClanInfo(t)])));
+  const prev = demo ? null : await HOURLY.loadPrev('ranked');   // snapshot from ~1 hour ago (for the +/- labels and arrows)
+  const hm = HOURLY.marks(prev, players.map((p, i) => ({ id: p.playerId, rank: i + 1, vals: { trophies: p.trophies, wins: p.rankedWins, losses: p.rankedLosses } })), { trophies: 'high', wins: 'high', losses: 'low' });
 
   rows = players.map((p, i) => {
     const b = bests[p.playerId], level = xpToLevel(p.totalXp);
     const color = clanInfo[p.clanTag]?.color ?? p.clanColor;
-    return { rank: i + 1, hm: null, p, level, color,
+    return { rank: i + 1, hm: hm ? hm.get(p.playerId) : null, p, level, color,
       tc: compare(p.trophies, b?.trophies, 'high'), wc: compare(p.rankedWins, b?.wins, 'high'), lc: compare(p.rankedLosses, b?.losses, 'low') };
   });
-  isDemo = demo;
-  await applyHourly();
-}
-
-// Loads the snapshot to compare with (last hour, or since 00:00 UTC), fills in the +/- labels and arrows, and redraws.
-async function applyHourly() {
-  if (!rows.length) return;
-  const prev = isDemo ? null : await HOURLY.loadPrev('ranked');
-  const hm = HOURLY.marks(prev, rows.map(r => { const p = r.p; return { id: p.playerId, rank: r.rank, vals: { trophies: p.trophies, wins: p.rankedWins, losses: p.rankedLosses } }; }), { trophies: 'high', wins: 'high', losses: 'low' });
-  rows.forEach(r => { r.hm = hm ? hm.get(r.p.playerId) : null; });
-  $('status').innerHTML = isDemo
+  $('status').innerHTML = demo
     ? '<b>Demo data:</b> the API could not be reached from this page (network or CORS), so sample players are shown.'
     : `Top ${rows.length} players, ranked season ${SEASON}.` + HOURLY.note(hm);
   render();
 }
-HOURLY.mountToggle(applyHourly);
 
 // ================= RENDER =================
 function render() {
