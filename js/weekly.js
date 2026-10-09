@@ -85,6 +85,15 @@ function extractPlayers(d, depth = 0) {
   return null;
 }
 
+// The weekly API does not send clan tags, so borrow them from the daily and ranked boards (same players).
+async function fillClans(players) {
+  const urls = ['/api/leaderboard-day', `/api/leaderboard-ranked?season=${CONFIG.currentSeason}`], known = new Map();
+  await Promise.all(urls.map(async u => {
+    try { const r = await fetch(u); if (!r.ok) return; for (const p of (extractPlayers(await r.json()) || [])) if (p.clanTag) known.set(p.playerId, p); }
+    catch (e) { /* that board is down: those players just stay without a clan */ }
+  }));
+  players.forEach(p => { const c = !p.clanTag && known.get(p.playerId); if (c) { p.clanTag = c.clanTag; p.clanColor = c.clanColor; } });
+}
 let isDemo = false;
 async function load() {
   let players, demo = false;
@@ -99,6 +108,7 @@ async function load() {
     console.warn('API failed:', e); players = demoPlayers(); demo = true;
   }
   players = players.slice(0, TOP_N);   // keeps the API's order
+  if (!demo) await fillClans(players);
   const bests = await getPersonalBests(players);
   const tags = [...new Set(players.map(p => p.clanTag).filter(Boolean))];
   const clanInfo = Object.fromEntries(await Promise.all(tags.map(async t => [t, await getClanInfo(t)])));
@@ -109,6 +119,7 @@ async function load() {
     return { rank: i + 1, hm: null, p, level, kdr, color,
       kc: compare(p.kills, b?.kills, 'high'), dc: compare(p.deaths, b?.deaths, 'low'), rc: compare(kdr, b?.kdr, 'high') };
   });
+  CLANPOWER.render($('clanPower'), demo ? [] : CLANPOWER.top3(players.map(p => ({ tag: p.clanTag, color: p.clanColor, score: p.kills }))), 'kills', CLAN_COLORS);
   isDemo = demo;
   await applyHourly();
 }
