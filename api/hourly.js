@@ -192,6 +192,8 @@ export default async function handler(req, res) {
       data = { generatedAt: new Date().toISOString(), span, date: date || null, boards: out };
     } else if (mode === 'clan-updates') {
       data = await clanUpdates(req.query);
+       } else if (mode === 'player-updates') {
+      data = await playerUpdates(req.query);
     } else return res.status(400).json({ error: 'unknown mode' });
     res.setHeader('Cache-Control', pastDay ? 'public, s-maxage=3600, stale-while-revalidate=86400' : 'public, s-maxage=300, stale-while-revalidate=600');
     res.status(200).json(data);
