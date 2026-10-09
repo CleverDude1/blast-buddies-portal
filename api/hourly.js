@@ -1,8 +1,7 @@
 // "What changed in the past hour". Compares the LIVE API values with the stored JSON snapshot from about 1 hour ago
 // (raw_snapshots, written by the hourly collector).
-//   /api/hourly?mode=prev&board=day|week|ranked|clan&span=hour|day  -> the comparison snapshot as { id: { rank, ...values } }  (pages compute their own +/- from it)
-//   /api/hourly?mode=summary&span=hour|day                          -> ready-made totals + every entry's gain and position change (sidebar + Past hour page)
-// span=hour: the stored snapshot closest to 1 hour ago.  span=day: the FIRST stored snapshot after 00:00 UTC today (so "today so far").
+//   /api/hourly?mode=prev&board=day|week|ranked|clan  -> the snapshot from ~1h ago, as { id: { rank, ...values } }  (pages compute their own +/- from it)
+//   /api/hourly?mode=summary                          -> ready-made totals + every entry's gain and position change (sidebar + Past hour page)
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY
 import { URLS, rest, extractList, fetchLive, normPlayer, normClan } from './_lib/shared.js';
 
@@ -26,31 +25,24 @@ const vals = (kind, r) => (kind === 'clan'
   ? { rank: r.rank, kills: r.kills, members: r.member_count }
   : { rank: r.rank, kills: r.kills, deaths: r.deaths, trophies: r.trophies, wins: r.ranked_wins, losses: r.ranked_losses });
 
-// span 'hour': the stored snapshot closest to "1 hour ago" (looks between 30 minutes and 2.5 hours back)
-// span 'day':  the first stored snapshot at or after 00:00 UTC today
-async function prevSnapshot(url, span) {
+// the stored snapshot closest to "1 hour ago" (looks between 30 minutes and 2.5 hours back)
+async function prevSnapshot(url) {
   const now = Date.now(), enc = encodeURIComponent;
-  let best;
-  if (span === 'day') {
-    const midnight = new Date(); midnight.setUTCHours(0, 0, 0, 0);
-    [best] = await rest(`raw_snapshots?select=id,fetched_at&url=eq.${enc(url)}&fetched_at=gte.${enc(midnight.toISOString())}&order=fetched_at.asc&limit=1`);
-  } else {
-    const lo = new Date(now - 150 * MIN).toISOString(), hi = new Date(now - 30 * MIN).toISOString();
-    const metas = await rest(`raw_snapshots?select=id,fetched_at&url=eq.${enc(url)}&fetched_at=gte.${enc(lo)}&fetched_at=lte.${enc(hi)}&order=fetched_at.desc&limit=20`);
-    if (metas.length) best = metas.reduce((a, b) => Math.abs(now - Date.parse(b.fetched_at) - 60 * MIN) < Math.abs(now - Date.parse(a.fetched_at) - 60 * MIN) ? b : a);
-  }
-  if (!best) return null;
+  const lo = new Date(now - 150 * MIN).toISOString(), hi = new Date(now - 30 * MIN).toISOString();
+  const metas = await rest(`raw_snapshots?select=id,fetched_at&url=eq.${enc(url)}&fetched_at=gte.${enc(lo)}&fetched_at=lte.${enc(hi)}&order=fetched_at.desc&limit=20`);
+  if (!metas.length) return null;
+  const best = metas.reduce((a, b) => Math.abs(now - Date.parse(b.fetched_at) - 60 * MIN) < Math.abs(now - Date.parse(a.fetched_at) - 60 * MIN) ? b : a);
   const [row] = await rest(`raw_snapshots?select=payload&id=eq.${best.id}`);
   return row ? { at: best.fetched_at, elapsedMin: Math.round((now - Date.parse(best.fetched_at)) / MIN), payload: row.payload } : null;
 }
 
-async function prevFor(board, span) {
-  const B = BOARDS[board], snap = await prevSnapshot(URLS[board], span);
+async function prevFor(board) {
+  const B = BOARDS[board], snap = await prevSnapshot(URLS[board]);
   const rows = snap && toRows(B.kind, snap.payload);
-  if (!rows) return { board, span, at: null, elapsedMin: null, entries: null };
+  if (!rows) return { board, at: null, elapsedMin: null, entries: null };
   const entries = {};
   for (const r of rows.slice(0, 300)) entries[r[idKey(B.kind)]] = vals(B.kind, r);
-  return { board, span, at: snap.at, elapsedMin: snap.elapsedMin, entries };
+  return { board, at: snap.at, elapsedMin: snap.elapsedMin, entries };
 }
 
 function summarize(board, cur, prev) {
@@ -69,7 +61,7 @@ function summarize(board, cur, prev) {
   const gains = list.filter(x => x.gain != null);
   const best = (arr, f) => arr.reduce((a, b) => (f(b) > f(a) ? b : a), arr[0]);
   return {
-    ok: true, reset, span: prev.span, unit: B.unit, at: prev.at, elapsedMin: prev.elapsedMin, count: list.length,
+    ok: true, reset, unit: B.unit, at: prev.at, elapsedMin: prev.elapsedMin, count: list.length,
     totalGain: gains.reduce((s, x) => s + x.gain, 0),
     gainers: gains.filter(x => x.gain > 0).length,
     moved: list.filter(x => x.move !== 0).length, up: list.filter(x => x.move > 0).length, down: list.filter(x => x.move < 0).length,
@@ -90,20 +82,19 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   try {
     const { mode, board } = req.query;
-    const span = req.query.span === 'day' ? 'day' : 'hour';
     let data;
     if (mode === 'prev') {
       if (!BOARDS[board]) return res.status(400).json({ error: 'board must be day, week, ranked or clan' });
-      data = await prevFor(board, span);
+      data = await prevFor(board);
     } else if (mode === 'summary') {
       const keys = Object.keys(BOARDS), out = {};
       await Promise.all(keys.map(async b => {
         try {
-          const [cur, prev] = await Promise.all([liveRows(b), prevFor(b, span)]);
+          const [cur, prev] = await Promise.all([liveRows(b), prevFor(b)]);
           out[b] = cur.length ? summarize(b, cur, prev) : { ok: false, unit: BOARDS[b].unit };
         } catch (e) { console.error(`summary ${b} failed:`, e.message); out[b] = { ok: false, unit: BOARDS[b].unit }; }
       }));
-      data = { generatedAt: new Date().toISOString(), span, boards: out };
+      data = { generatedAt: new Date().toISOString(), boards: out };
     } else return res.status(400).json({ error: 'unknown mode' });
     res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');   // keeps database + live API load low
     res.status(200).json(data);
