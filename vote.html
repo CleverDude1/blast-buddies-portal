@@ -26,16 +26,19 @@
   const IMG = { maps: 'images/maps', primary: 'images/weapons', secondary: 'images/weapons', grenades: 'images/weapons' };
   const FB = `this.onerror=null;this.src='images/placeholder.png'`;
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const emptyPicks = () => Object.fromEntries(CATS.map(c => [c, {}]));
   const app = document.getElementById('vtApp'), intro = document.getElementById('vtIntro');
-  let ITEMS, TIERS, cat = 'maps', sel = null, busy = false;
-  const picks = Object.fromEntries(CATS.map(c => [c, {}]));
+  let ITEMS, TIERS, cat = 'maps', sel = null, busy = false, editing = false, saved = null;   // saved = latest results payload
+  let picks = emptyPicks();
 
   const tile = (c, n) => `<button class="weapon-tile vt-item${sel === n ? ' sel' : ''}" draggable="true" data-item="${esc(n)}">
       <img src="${IMG[c]}/${esc(n)}.png" alt="" onerror="${FB}"><span>${esc(n)}</span></button>`;
 
   function form() {
     const placed = Object.keys(picks[cat]).length, total = ITEMS[cat].length;
-    intro.textContent = 'Sort each category into tiers, then submit. You can only vote once, and results appear after you submit.';
+    intro.textContent = editing
+      ? 'Editing your tier list. Saving replaces your previous picks, and your vote still counts once.'
+      : 'Sort each category into tiers, then submit. Results appear after you submit, and you can change your tier list later.';
     app.innerHTML = `
       <div class="toolbar"><div class="seg">${CATS.map(c => `<button data-cat="${c}" class="${c === cat ? 'on' : ''}">${LABEL[c]}</button>`).join('')}</div>
         <span class="muted" style="align-self:center">${placed}/${total} placed in ${LABEL[cat]}. Tap an item, then tap a tier (or drag it).</span></div>
@@ -44,7 +47,10 @@
           <b class="vt-label">${t || 'Unsorted'}</b>
           <div class="vt-zone">${ITEMS[cat].filter(n => (picks[cat][n] || null) === t).map(n => tile(cat, n)).join('')}</div></div>`).join('')}
       </section>
-      <button class="pill" id="vtSubmit" style="margin:0 auto;display:flex">Submit my tier list</button>`;
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+        <button class="pill" id="vtSubmit">${editing ? 'Save changes' : 'Submit my tier list'}</button>
+        ${editing ? '<button class="pill" id="vtCancel">Cancel</button>' : ''}
+      </div>`;
   }
 
   function place(item, tier) {
@@ -53,7 +59,16 @@
     sel = null; form();
   }
 
+  function startEdit() {
+    ITEMS = saved.items; TIERS = saved.tiers;
+    picks = emptyPicks();
+    for (const c of CATS) Object.assign(picks[c], saved.mine?.[c] || {});
+    cat = 'maps'; sel = null; editing = true; form();
+  }
+
   app.addEventListener('click', e => {
+    if (e.target.closest('#vtEdit')) return startEdit();
+    if (e.target.closest('#vtCancel')) return results(saved);
     const c = e.target.closest('[data-cat]'); if (c) { cat = c.dataset.cat; sel = null; return form(); }
     const t = e.target.closest('.vt-item'); if (t) { sel = sel === t.dataset.item ? null : t.dataset.item; return form(); }
     const r = e.target.closest('.vt-row'); if (r && sel) return place(sel, r.dataset.tier);
@@ -67,7 +82,7 @@
     if (busy) return;
     const n = CATS.reduce((s, c) => s + Object.keys(picks[c]).length, 0);
     if (n < 3) return alert('Place at least 3 items before submitting.');
-    if (!confirm('You can only vote once. Submit now?')) return;
+    if (!editing && !confirm('Submit your tier list? You can change it later.')) return;
     busy = true;
     try {
       const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tiers: picks }) });
@@ -78,8 +93,10 @@
   }
 
   function results(d) {
-    intro.textContent = `Thanks for voting! ${d.total} ballot${d.total === 1 ? '' : 's'} so far. The percentage is the share of voters who placed it in S or A.`;
-    app.innerHTML = CATS.map(c => `<section class="panel"><h3>${LABEL[c]}</h3>
+    saved = d; editing = false;
+    intro.textContent = `${d.edited ? 'Your tier list was updated.' : 'Thanks for voting!'} ${d.total} ballot${d.total === 1 ? '' : 's'} so far. The percentage is the share of voters who placed it in S or A.`;
+    app.innerHTML = `<button class="pill" id="vtEdit" style="margin:0 auto 16px;display:flex">Edit my tier list</button>`
+      + CATS.map(c => `<section class="panel"><h3>${LABEL[c]}</h3>
       ${(d.results[c] || []).map(r => `<div class="vt-res">
         <img src="${IMG[c]}/${esc(r.item)}.png" alt="" onerror="${FB}">
         <div class="vt-res-main"><div class="vt-res-top"><b>${esc(r.item)}</b><span>${r.pctTop}% <small>avg ${r.avgScore}/5</small></span></div>
