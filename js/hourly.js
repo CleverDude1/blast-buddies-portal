@@ -1,6 +1,6 @@
 // Shared by the leaderboard pages: loads the snapshot from ~1 hour ago and builds the "+2k" labels and the up/down arrows.
 // Everything lives inside HOURLY so it cannot clash with names in the page scripts.
-import voteHandler from './_lib/vote.js';
+
 const HOURLY = (() => {
   // The chosen comparison is shared by every page (and the sidebar): 'hour' = vs ~1 hour ago, 'day' = vs the first snapshot after 00:00 UTC.
   const getSpan = () => { try { return localStorage.getItem('hrSpan') === 'day' ? 'day' : 'hour'; } catch (e) { return 'hour'; } };
