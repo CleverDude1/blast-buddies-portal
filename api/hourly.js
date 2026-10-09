@@ -1,6 +1,8 @@
 // "What changed". Works out gains and position changes from the stored JSON snapshots (raw_snapshots) plus the live API.
 //   /api/hourly?mode=prev&board=day|week|ranked|clan&span=hour|day   -> per-entry gains for the leaderboard pages (+2k labels, arrows)
 //   /api/hourly?mode=summary&span=hour|day[&date=YYYY-MM-DD]          -> totals, every entry's gain/position change, strongest clans, graph lines
+//   /api/hourly?mode=clan-updates&kind=all|left|joined|renamed|access|color&q=&offset=   -> Clan Updates feed
+//   /api/hourly?mode=vote                                             -> Community Vote (GET = status/results, POST = submit ballot)
 //
 // span=hour : the stored snapshot closest to 1 hour ago  ->  live.
 // span=day  : EVERY stored snapshot from 00:00 UTC today ->  live.   With &date=...: every snapshot of that past day, 00:00 to 00:00 UTC.
@@ -13,11 +15,10 @@
 //   - leaves the list: nothing is counted after that -> marked partial (~)
 //   - a daily/weekly board that reset between two snapshots: values since the reset are counted
 // The DAILY board is the exception for span=day: it starts at 0 at 00:00 UTC, so a player's value IS what they gained that day.
-// Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY
+// Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, VOTE_SALT
 import { URLS, rest, extractList, fetchLive, normPlayer, normClan } from './_lib/shared.js';
 import { clanUpdates } from './_lib/clan-updates.js';
 import voteHandler from './_lib/vote.js';
-
 
 const BOARDS = {
   day:    { kind: 'player', metric: 'kills',    unit: 'kills',    resets: true,  keys: ['kills', 'deaths'] },
@@ -164,6 +165,9 @@ async function prevFor(board, span) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   try {
+    // Community Vote has its own cookie, status codes and caching, so it answers the request itself
+    if (req.query.mode === 'vote') return voteHandler(req, res);
+
     const { mode, board } = req.query;
     const span = req.query.span === 'day' ? 'day' : 'hour';
     const date = span === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : undefined;
@@ -184,7 +188,7 @@ export default async function handler(req, res) {
           out[b] = pts ? summarize(b, span, pts, chain(b, span, pts), clanOf) : { ok: false, unit: BOARDS[b].unit };
         } catch (e) { console.error(`summary ${b} failed:`, e.message); out[b] = { ok: false, unit: BOARDS[b].unit }; }
       }));
-           data = { generatedAt: new Date().toISOString(), span, date: date || null, boards: out };
+      data = { generatedAt: new Date().toISOString(), span, date: date || null, boards: out };
     } else if (mode === 'clan-updates') {
       data = await clanUpdates(req.query);
     } else return res.status(400).json({ error: 'unknown mode' });
