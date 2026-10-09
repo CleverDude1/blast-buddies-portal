@@ -19,6 +19,7 @@ const NAV = [
   ['maps','Maps','maps.html'],
   ['weapons','Weapons','weapons.html'],
   ['abilities','Abilities','abilities.html'],
+  ['vote','Community Vote','vote.html'],  
   ['updates','Updates','updates.html']
 ];
 const page = document.body.dataset.page;
