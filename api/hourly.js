@@ -16,6 +16,7 @@
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY
 import { URLS, rest, extractList, fetchLive, normPlayer, normClan } from './_lib/shared.js';
 import { clanUpdates } from './_lib/clan-updates.js';
+import voteHandler from './_lib/vote.js';
 
 
 const BOARDS = {
