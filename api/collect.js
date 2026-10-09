@@ -1,3 +1,4 @@
+import { recordClanUpdates } from './_lib/clan-updates.js';
 import { createClient } from '@supabase/supabase-js';
 import { SOURCES } from './_sources/index.js';
 import {
