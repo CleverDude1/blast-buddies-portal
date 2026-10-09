@@ -20,6 +20,7 @@
 <script src="js/layout.js"></script>
 <script>
 (() => {
+  const API = '/api/hourly?mode=vote';
   const LABEL = { maps: 'Maps', primary: 'Primary', secondary: 'Secondary', grenades: 'Grenades' };
   const CATS = Object.keys(LABEL);
   const IMG = { maps: 'images/maps', primary: 'images/weapons', secondary: 'images/weapons', grenades: 'images/weapons' };
@@ -69,7 +70,7 @@
     if (!confirm('You can only vote once. Submit now?')) return;
     busy = true;
     try {
-      const r = await fetch('/api/_lib/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tiers: picks }) });
+      const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tiers: picks }) });
       const d = await r.json();
       if (d.voted) results(d); else alert(d.error || 'Something went wrong.');
     } catch (x) { alert('Could not reach the server. Please try again.'); }
@@ -88,7 +89,7 @@
 
   (async () => {
     try {
-      const d = await (await fetch('/api/_lib/vote')).json();
+      const d = await (await fetch(API)).json();
       if (d.voted) return results(d);
       ({ items: ITEMS, tiers: TIERS } = d); form();
     } catch (x) { intro.textContent = 'Could not load the vote. Please try again later.'; }
