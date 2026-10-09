@@ -1,5 +1,6 @@
-// Community Vote. GET -> { voted:false, items } or { voted:true, total, results }. POST { tiers } -> submits one ballot.
-// One ballot per cookie per poll (DB unique constraint) + max 3 per hashed IP/user-agent.
+// Community Vote. GET -> { voted:false, items, tiers } or { voted:true, mine, items, tiers, total, results }.
+// POST { tiers } -> first time: creates the ballot. Already voted: replaces that ballot's picks (edit).
+// One ballot per cookie per poll (DB unique constraint) + max 3 new ballots per hashed IP/user-agent.
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, VOTE_SALT
 import crypto from 'crypto';
 
@@ -7,7 +8,7 @@ const POLL = 'season-3';           // change per season (and add a row to vote_p
 const MAX_PER_IP = 3;
 const TIERS = ['S', 'A', 'B', 'C', 'D'];
 const ITEMS = {
-   maps: ['Arena','Blocktown','Canyon','Favela','Nukeville','Outpost','Prototype','Pyramids','Rooftops','Shipment','SunnyTown'],        // <-- paste your map names
+  maps: ['Arena','Blocktown','Canyon','Favela','Nukeville','Outpost','Prototype','Pyramids','Rooftops','Shipment','SunnyTown'],
   primary: ['Assault','Bow','Burst','Lmg','MAC-10','Shotgun','Sniper','Thompson','UMP-45'],
   secondary: ['Energy','Flare','Pistol','RayGun','Revolver','Snare'],
   grenades: ['BlackHole','Flashbang','Inferno','Shockwave','Smoke','Storm','Updraft','Warp'],
@@ -28,6 +29,17 @@ async function count(path) {
 }
 const cookieOf = req => (req.headers.cookie || '').split('; ').find(c => c.startsWith('bb_voter='))?.split('=')[1];
 
+const myBallot = async id => (await get(`ballots?select=id&poll_id=eq.${POLL}&cookie_id=eq.${enc(id)}&limit=1`))[0]?.id ?? null;
+const postItems = (ballotId, rows) => fetch(`${SB}/rest/v1/ballot_items`, {
+  method: 'POST', headers: H, body: JSON.stringify(rows.map(r => ({ category: r.category, item: r.item, tier: r.tier, ballot_id: ballotId }))),
+});
+
+async function myPicks(ballotId) {
+  const out = {};
+  for (const r of await get(`ballot_items?select=category,item,tier&ballot_id=eq.${ballotId}`)) (out[r.category] ||= {})[r.item] = r.tier;
+  return out;
+}
+
 async function results() {
   const [total, rows] = await Promise.all([count(`ballots?poll_id=eq.${POLL}`), get(`vote_results?poll_id=eq.${POLL}`)]);
   const out = {};
@@ -40,6 +52,9 @@ async function results() {
   return { total, results: out };
 }
 
+// everything the page needs once someone has a ballot
+const full = async ballotId => ({ voted: true, mine: await myPicks(ballotId), items: ITEMS, tiers: TIERS, ...(await results()) });
+
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   try {
@@ -48,18 +63,12 @@ export default async function handler(req, res) {
       id = crypto.randomUUID();
       res.setHeader('Set-Cookie', `bb_voter=${id}; Path=/; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax`);
     }
-    const voted = (await count(`ballots?poll_id=eq.${POLL}&cookie_id=eq.${enc(id)}`)) > 0;
+    const ballotId = await myBallot(id);
 
     if (req.method === 'GET') {
-      return res.status(200).json(voted ? { voted: true, ...(await results()) } : { voted: false, items: ITEMS, tiers: TIERS });
+      return res.status(200).json(ballotId ? await full(ballotId) : { voted: false, items: ITEMS, tiers: TIERS });
     }
     if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
-    if (voted) return res.status(409).json({ voted: true, ...(await results()) });
-
-    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-    const ipHash = crypto.createHash('sha256').update(`${ip}|${req.headers['user-agent'] || ''}|${process.env.VOTE_SALT}`).digest('hex');
-    if ((await count(`ballots?poll_id=eq.${POLL}&ip_hash=eq.${ipHash}`)) >= MAX_PER_IP)
-      return res.status(429).json({ error: 'Too many votes from this device or network.' });
 
     // only accept known items and tiers
     const rows = [];
@@ -70,22 +79,38 @@ export default async function handler(req, res) {
     }
     if (rows.length < 3) return res.status(400).json({ error: 'Place at least 3 items before submitting.' });
 
+    // ---- already voted: replace this ballot's picks (an edit never adds a vote) ----
+    if (ballotId) {
+      const old = await get(`ballot_items?select=category,item,tier&ballot_id=eq.${ballotId}`);
+      await fetch(`${SB}/rest/v1/ballot_items?ballot_id=eq.${ballotId}`, { method: 'DELETE', headers: H });
+      const ins = await postItems(ballotId, rows);
+      if (!ins.ok) {                                              // put the old picks back so nothing is lost
+        await postItems(ballotId, old);
+        throw new Error(await ins.text());
+      }
+      return res.status(200).json({ ...(await full(ballotId)), edited: true });
+    }
+
+    // ---- first vote ----
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    const ipHash = crypto.createHash('sha256').update(`${ip}|${req.headers['user-agent'] || ''}|${process.env.VOTE_SALT}`).digest('hex');
+    if ((await count(`ballots?poll_id=eq.${POLL}&ip_hash=eq.${ipHash}`)) >= MAX_PER_IP)
+      return res.status(429).json({ error: 'Too many votes from this device or network.' });
+
     const b = await fetch(`${SB}/rest/v1/ballots`, {
       method: 'POST', headers: { ...H, Prefer: 'return=representation' },
       body: JSON.stringify({ poll_id: POLL, cookie_id: id, ip_hash: ipHash }),
     });
-    if (b.status === 409) return res.status(409).json({ voted: true, ...(await results()) }); // double submit
+    if (b.status === 409) return res.status(409).json(await full(await myBallot(id)));   // double submit
     if (!b.ok) throw new Error(await b.text());
-    const [{ id: ballotId }] = await b.json();
+    const [{ id: newId }] = await b.json();
 
-    const it = await fetch(`${SB}/rest/v1/ballot_items`, {
-      method: 'POST', headers: H, body: JSON.stringify(rows.map(r => ({ ...r, ballot_id: ballotId }))),
-    });
-    if (!it.ok) {                                                   // don't leave an empty ballot that blocks a retry
-      await fetch(`${SB}/rest/v1/ballots?id=eq.${ballotId}`, { method: 'DELETE', headers: H });
-      throw new Error(await it.text());
+    const ins = await postItems(newId, rows);
+    if (!ins.ok) {                                                // don't leave an empty ballot that blocks a retry
+      await fetch(`${SB}/rest/v1/ballots?id=eq.${newId}`, { method: 'DELETE', headers: H });
+      throw new Error(await ins.text());
     }
-    return res.status(200).json({ voted: true, ...(await results()) });
+    return res.status(200).json(await full(newId));
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'Something went wrong. Please try again.' });
