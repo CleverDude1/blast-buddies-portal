@@ -246,3 +246,13 @@ dialog h3{font-size:24px;margin-bottom:4px}
 .vt-res-top small{color:var(--muted);margin-left:6px}
 .vt-bar{height:8px;border-radius:5px;background:#050704;margin-top:6px;overflow:hidden}
 .vt-bar i{display:block;height:100%;background:linear-gradient(90deg,#d9921f,#ffd24d)}
+/* ---- clan updates ---- */
+.cu-row{grid-template-columns:56px minmax(150px,1.2fr) 140px minmax(170px,1.4fr) minmax(170px,1.4fr) 190px}
+.cu-old{border-left:3px solid #a02323;padding-left:14px;color:var(--muted)}
+.cu-new{border-left:3px solid #2f8f3f;padding-left:14px;font-weight:700}
+.cu-time{text-align:right;color:var(--muted);font-size:14px}
+.cu-badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;background:#2b3524}
+.cu-badge.k-left{background:#4a1d1d;color:#ff9b9b}.cu-badge.k-joined{background:#1d4a27;color:#8ff09b}
+.cu-badge.k-renamed{background:#1d2f4a;color:#9bc8ff}.cu-badge.k-access{background:#4a3a1d;color:#ffd98b}.cu-badge.k-color{background:#3a1d4a;color:#d9a8ff}
+.cu-sw{display:inline-block;width:16px;height:16px;border-radius:4px;vertical-align:-3px;margin-right:8px;border:1px solid rgba(0,0,0,.4)}
+.cu-more{margin:16px auto;display:flex}
