@@ -84,7 +84,7 @@ if (grid) grid.innerHTML = NAV.filter(n => n[0] !== 'home')
   const e = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const short = n => { const a = Math.abs(n); return a >= 1e6 ? (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M' : a >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k' : String(Math.round(n)); };
   const signed = n => (n > 0 ? '+' : n < 0 ? '-' : '') + short(Math.abs(n));
-  const mv = x => x.isNew ? '<span class="mv new">NEW</span>' : x.move > 0 ? `<span class="mv up">▲${x.move}</span>` : x.move < 0 ? `<span class="mv down">▼${-x.move}</span>` : '';
+  const mv = x => x.status === 'left' ? '<span class="mv down">LEFT</span>' : x.status === 'passed' ? '<span class="mv new">BRIEF</span>' : x.isNew ? '<span class="mv new">NEW</span>' : x.move > 0 ? `<span class="mv up">▲${x.move}</span>` : x.move < 0 ? `<span class="mv down">▼${-x.move}</span>` : '';
   const getSpan = () => { try { return localStorage.getItem('hrSpan') === 'day' ? 'day' : 'hour'; } catch (x) { return 'hour'; } };
   const cache = {};                       // summary per span: { hour: {...}, day: {...} }
   let span = getSpan(), cur = 'day';
