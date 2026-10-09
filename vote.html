@@ -88,7 +88,7 @@
 
   (async () => {
     try {
-      const d = await (await fetch('/api/vote')).json();
+      const d = await (await fetch('/api/_lib/vote')).json();
       if (d.voted) return results(d);
       ({ items: ITEMS, tiers: TIERS } = d); form();
     } catch (x) { intro.textContent = 'Could not load the vote. Please try again later.'; }
