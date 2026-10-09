@@ -13,21 +13,33 @@
 <template id="page-content">
 <section class="panel">
   <h1 class="page-title" id="phTitle">Past hour</h1>
-  <p class="muted" id="phWhen">What changed on the leaderboards since the snapshot from about an hour ago.</p>
+  <p class="muted" id="phWhen">What changed on the leaderboards.</p>
   <div class="seg" id="phTabs" style="margin-top:16px">
     <button data-b="day" class="on">Daily</button><button data-b="week">Weekly</button><button data-b="ranked">Ranked</button><button data-b="clan">Clans</button>
   </div>
-  <div class="seg" id="phSpan" style="margin-top:16px">
-    <button data-span="hour">Last hour</button><button data-span="day" title="Since 00:00 UTC">Last day</button>
-  </div>
+  <div class="ph-g" id="phSpan">
+      <button data-span="hour">Last hour</button><button data-span="day" title="Since 00:00 UTC">Last day</button>
+    </div>
+    <label class="muted" id="phDateWrap" style="display:none">Day <input type="date" id="phDate"> <button class="pill" id="phToday" style="height:34px;padding:0 12px">Today</button></label>
+  </div>controls">
+    <div class="se
 </section>
+<div id="phPower"></div>
 <div class="ph-stats" id="phStats"></div>
 <div class="board"><div class="board-inner">
   <div class="lb-row ph-row lb-head"><span style="text-align:center">#</span><span>Name</span><span id="phGainHead">Gain</span><span>Was</span><span>Change</span></div>
   <div id="phRows"></div>
 </div></div>
+<section class="panel ph-graph" id="phGraphPanel" style="margin-top:24px">
+  <h3 id="phGraphTitle">Gains over time</h3>
+  <p class="muted" id="phGraphNote"></p>
+  <div class="ph-chart" id="phChart"></div>
+  <div class="ph-leg" id="phLegend"></div>
+</section>
 </template>
 <script src="js/layout.js"></script>
+<script src="js/clan-colors.js"></script>
+<script src="js/clanpower.js"></script>
 <script src="js/past-hour.js"></script>
 </body>
 </html>
