@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Community Vote | Blast Buddies Tracker</title>
+<link rel="icon" href="images/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="vote">
+<template id="page-content">
+<section class="panel">
+  <h1 class="page-title">Community Vote</h1>
+  <p class="muted" id="vtIntro">Loading...</p>
+</section>
+<div id="vtApp"></div>
+</template>
+<script src="js/layout.js"></script>
+<script>
+(() => {
+  const LABEL = { maps: 'Maps', primary: 'Primary', secondary: 'Secondary', grenades: 'Grenades' };
+  const CATS = Object.keys(LABEL);
+  const IMG = { maps: 'images/maps', primary: 'images/weapons', secondary: 'images/weapons', grenades: 'images/weapons' };
+  const FB = `this.onerror=null;this.src='images/placeholder.png'`;
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const app = document.getElementById('vtApp'), intro = document.getElementById('vtIntro');
+  let ITEMS, TIERS, cat = 'maps', sel = null, busy = false;
+  const picks = Object.fromEntries(CATS.map(c => [c, {}]));
+
+  const tile = (c, n) => `<button class="weapon-tile vt-item${sel === n ? ' sel' : ''}" draggable="true" data-item="${esc(n)}">
+      <img src="${IMG[c]}/${esc(n)}.png" alt="" onerror="${FB}"><span>${esc(n)}</span></button>`;
+
+  function form() {
+    const placed = Object.keys(picks[cat]).length, total = ITEMS[cat].length;
+    intro.textContent = 'Sort each category into tiers, then submit. You can only vote once, and results appear after you submit.';
+    app.innerHTML = `
+      <div class="toolbar"><div class="seg">${CATS.map(c => `<button data-cat="${c}" class="${c === cat ? 'on' : ''}">${LABEL[c]}</button>`).join('')}</div>
+        <span class="muted" style="align-self:center">${placed}/${total} placed in ${LABEL[cat]}. Tap an item, then tap a tier (or drag it).</span></div>
+      <section class="panel vt-board">
+        ${[...TIERS, null].map(t => `<div class="vt-row${t ? ' t-' + t : ''}" data-tier="${t || ''}">
+          <b class="vt-label">${t || 'Unsorted'}</b>
+          <div class="vt-zone">${ITEMS[cat].filter(n => (picks[cat][n] || null) === t).map(n => tile(cat, n)).join('')}</div></div>`).join('')}
+      </section>
+      <button class="pill" id="vtSubmit" style="margin:0 auto;display:flex">Submit my tier list</button>`;
+  }
+
+  function place(item, tier) {
+    if (!item || !ITEMS[cat].includes(item)) return;
+    if (tier) picks[cat][item] = tier; else delete picks[cat][item];
+    sel = null; form();
+  }
+
+  app.addEventListener('click', e => {
+    const c = e.target.closest('[data-cat]'); if (c) { cat = c.dataset.cat; sel = null; return form(); }
+    const t = e.target.closest('.vt-item'); if (t) { sel = sel === t.dataset.item ? null : t.dataset.item; return form(); }
+    const r = e.target.closest('.vt-row'); if (r && sel) return place(sel, r.dataset.tier);
+    if (e.target.closest('#vtSubmit')) submit();
+  });
+  app.addEventListener('dragstart', e => { const t = e.target.closest('.vt-item'); if (t) e.dataTransfer.setData('text/plain', t.dataset.item); });
+  app.addEventListener('dragover', e => { if (e.target.closest('.vt-row')) e.preventDefault(); });
+  app.addEventListener('drop', e => { const r = e.target.closest('.vt-row'); if (r) { e.preventDefault(); place(e.dataTransfer.getData('text/plain'), r.dataset.tier); } });
+
+  async function submit() {
+    if (busy) return;
+    const n = CATS.reduce((s, c) => s + Object.keys(picks[c]).length, 0);
+    if (n < 3) return alert('Place at least 3 items before submitting.');
+    if (!confirm('You can only vote once. Submit now?')) return;
+    busy = true;
+    try {
+      const r = await fetch('/api/vote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tiers: picks }) });
+      const d = await r.json();
+      if (d.voted) results(d); else alert(d.error || 'Something went wrong.');
+    } catch (x) { alert('Could not reach the server. Please try again.'); }
+    busy = false;
+  }
+
+  function results(d) {
+    intro.textContent = `Thanks for voting! ${d.total} ballot${d.total === 1 ? '' : 's'} so far. The percentage is the share of voters who placed it in S or A.`;
+    app.innerHTML = CATS.map(c => `<section class="panel"><h3>${LABEL[c]}</h3>
+      ${(d.results[c] || []).map(r => `<div class="vt-res">
+        <img src="${IMG[c]}/${esc(r.item)}.png" alt="" onerror="${FB}">
+        <div class="vt-res-main"><div class="vt-res-top"><b>${esc(r.item)}</b><span>${r.pctTop}% <small>avg ${r.avgScore}/5</small></span></div>
+        <div class="vt-bar"><i style="width:${Math.min(100, r.pctTop)}%"></i></div></div></div>`).join('') || '<p class="muted">No votes yet.</p>'}
+    </section>`).join('');
+  }
+
+  (async () => {
+    try {
+      const d = await (await fetch('/api/vote')).json();
+      if (d.voted) return results(d);
+      ({ items: ITEMS, tiers: TIERS } = d); form();
+    } catch (x) { intro.textContent = 'Could not load the vote. Please try again later.'; }
+  })();
+})();
+</script>
+</body>
+</html>
