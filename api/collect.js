@@ -1,3 +1,4 @@
+import { recordPlayerUpdates } from './_lib/player-updates.js';
 import { recordClanUpdates } from './_lib/clan-updates.js';
 import { createClient } from '@supabase/supabase-js';
 import { SOURCES } from './_sources/index.js';
@@ -121,6 +122,7 @@ export default async function handler(req, res) {
       tracked: CLAN_TRACKED, rows: [...clans.values()], runId: run.id, now,
     }));
   await step('clanUpdates', () => recordClanUpdates());
+    await step('playerUpdates', () => recordPlayerUpdates());
   // 4. Close out the run
   const status = errors.length === 0 ? 'ok' : fetchedOk > 0 ? 'partial' : 'failed';
   await db.from('collection_runs')
