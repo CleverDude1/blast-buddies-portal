@@ -7,7 +7,7 @@ const POLL = 'season-3';           // change per season (and add a row to vote_p
 const MAX_PER_IP = 3;
 const TIERS = ['S', 'A', 'B', 'C', 'D'];
 const ITEMS = {
-  maps: ['MAP NAMES HERE'],        // <-- paste your map names
+   maps: ['Arena','Blocktown','Canyon','Favela','Nukeville','Outpost','Prototype','Pyramids','Rooftops','Shipment','SunnyTown'],        // <-- paste your map names
   primary: ['Assault','Bow','Burst','Lmg','MAC-10','Shotgun','Sniper','Thompson','UMP-45'],
   secondary: ['Energy','Flare','Pistol','RayGun','Revolver','Snare'],
   grenades: ['BlackHole','Flashbang','Inferno','Shockwave','Smoke','Storm','Updraft','Warp'],
