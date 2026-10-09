@@ -120,7 +120,7 @@ export default async function handler(req, res) {
       table: 'clans', historyTable: 'clan_history', keyCols: ['clan_id'],
       tracked: CLAN_TRACKED, rows: [...clans.values()], runId: run.id, now,
     }));
-
+  await step('clanUpdates', () => recordClanUpdates());
   // 4. Close out the run
   const status = errors.length === 0 ? 'ok' : fetchedOk > 0 ? 'partial' : 'failed';
   await db.from('collection_runs')
