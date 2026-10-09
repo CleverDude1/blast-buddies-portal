@@ -15,6 +15,8 @@
 // The DAILY board is the exception for span=day: it starts at 0 at 00:00 UTC, so a player's value IS what they gained that day.
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY
 import { URLS, rest, extractList, fetchLive, normPlayer, normClan } from './_lib/shared.js';
+import { clanUpdates } from './_lib/clan-updates.js';
+
 
 const BOARDS = {
   day:    { kind: 'player', metric: 'kills',    unit: 'kills',    resets: true,  keys: ['kills', 'deaths'] },
