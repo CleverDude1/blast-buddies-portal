@@ -256,3 +256,9 @@ dialog h3{font-size:24px;margin-bottom:4px}
 .cu-badge.k-renamed{background:#1d2f4a;color:#9bc8ff}.cu-badge.k-access{background:#4a3a1d;color:#ffd98b}.cu-badge.k-color{background:#3a1d4a;color:#d9a8ff}
 .cu-sw{display:inline-block;width:16px;height:16px;border-radius:4px;vertical-align:-3px;margin-right:8px;border:1px solid rgba(0,0,0,.4)}
 .cu-more{margin:16px auto;display:flex}
+/* ---- player updates ---- */
+.cu-badge.k-weapon{background:#4a2f1d;color:#ffb98b}
+.cu-badge.k-level_max{background:#4a431d;color:#ffe98b}
+.cu-badge.k-clan_joined{background:#1d4a27;color:#8ff09b}
+.cu-badge.k-clan_left{background:#4a1d1d;color:#ff9b9b}
+.cu-wp{width:28px;height:28px;object-fit:contain;vertical-align:middle;margin-right:8px}
