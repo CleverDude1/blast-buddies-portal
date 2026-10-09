@@ -34,7 +34,7 @@ document.body.insertAdjacentHTML('afterbegin', `
     <nav class="nav">
       ${NAV.map(([id,label,href]) => `<a href="${href}" class="${id===page?'active':''}">${icon(id)}${label}</a>`).join('')}
     </nav>
-    <section class="hr" id="hr"><h4>PAST HOUR <small id="hrAt"></small></h4><div id="hrBody"><p class="hr-note">Loading...</p></div></section>
+    <section class="hr" id="hr"><h4><span id="hrTitle">PAST HOUR</span> <small id="hrAt"></small></h4><div id="hrBody"><p class="hr-note">Loading...</p></div></section>
   </div>
 </aside>
 <div class="main">
@@ -85,23 +85,43 @@ if (grid) grid.innerHTML = NAV.filter(n => n[0] !== 'home')
   const short = n => { const a = Math.abs(n); return a >= 1e6 ? (n / 1e6).toFixed(2).replace(/\.?0+$/, '') + 'M' : a >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k' : String(Math.round(n)); };
   const signed = n => (n > 0 ? '+' : n < 0 ? '-' : '') + short(Math.abs(n));
   const mv = x => x.isNew ? '<span class="mv new">NEW</span>' : x.move > 0 ? `<span class="mv up">▲${x.move}</span>` : x.move < 0 ? `<span class="mv down">▼${-x.move}</span>` : '';
-  let data = null, cur = 'day';
+  const getSpan = () => { try { return localStorage.getItem('hrSpan') === 'day' ? 'day' : 'hour'; } catch (x) { return 'hour'; } };
+  const cache = {};                       // summary per span: { hour: {...}, day: {...} }
+  let span = getSpan(), cur = 'day';
   const body = document.getElementById('hrBody');
   function draw() {
-    const tabs = `<div class="hr-tabs">${Object.entries(BOARD_LABEL).map(([k, l]) => `<button data-hr="${k}" class="${k === cur ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    const data = cache[span];
+    document.getElementById('hrTitle').textContent = span === 'day' ? 'LAST DAY' : 'PAST HOUR';
+    document.getElementById('hrAt').textContent = '';
+    const spanTabs = `<div class="hr-tabs"><button data-span="hour" class="${span === 'hour' ? 'on' : ''}">Last hour</button><button data-span="day" class="${span === 'day' ? 'on' : ''}" title="Since 00:00 UTC">Last day</button></div>`;
+    if (data === undefined) { body.innerHTML = spanTabs + '<p class="hr-note">Loading...</p>'; return; }
+    if (data === null) { body.innerHTML = spanTabs + '<p class="hr-note">No hourly data yet.</p>'; return; }
+    const tabs = spanTabs + `<div class="hr-tabs">${Object.entries(BOARD_LABEL).map(([k, l]) => `<button data-hr="${k}" class="${k === cur ? 'on' : ''}">${l}</button>`).join('')}</div>`;
     const b = data.boards[cur];
-    if (!b || !b.ok) { body.innerHTML = tabs + '<p class="hr-note">No hourly data for this board yet.</p>'; return; }
-    if (b.reset) { body.innerHTML = tabs + '<p class="hr-note">This board just reset, so there are no hourly changes to show yet.</p>'; return; }
+    if (!b || !b.ok) { body.innerHTML = tabs + `<p class="hr-note">${span === 'day' ? 'No snapshot since 00:00 UTC yet.' : 'No hourly data for this board yet.'}</p>`; return; }
+    if (b.reset) { body.innerHTML = tabs + '<p class="hr-note">This board just reset, so there are no changes to show yet.</p>'; return; }
     const gainers = b.all.filter(x => x.gain > 0).sort((p, q) => q.gain - p.gain).slice(0, 5);
     const movers = b.all.filter(x => x.move !== 0).sort((p, q) => Math.abs(q.move) - Math.abs(p.move)).slice(0, 4);
-    document.getElementById('hrAt').textContent = b.elapsedMin ? `last ${b.elapsedMin >= 50 && b.elapsedMin <= 70 ? '1h' : b.elapsedMin + 'm'}` : '';
+    document.getElementById('hrAt').textContent = span === 'day' ? `since ${new Date(b.at).toISOString().slice(11, 16)} UTC` : (b.elapsedMin ? `last ${b.elapsedMin >= 50 && b.elapsedMin <= 70 ? '1h' : b.elapsedMin + 'm'}` : '');
     body.innerHTML = tabs
       + `<div class="hr-big"><div><b>${signed(b.totalGain)}</b><span>Total ${e(b.unit)}</span></div><div><b>${b.moved}</b><span>Position changes</span></div></div>`
       + `<div class="hr-sub">Top gains</div><div class="hr-list">${gainers.map(x => `<div><span>${e(x.name)}</span><span class="dlt up" style="margin:0">+${short(x.gain)}</span></div>`).join('') || '<span class="hr-note">Nobody gained.</span>'}</div>`
       + `<div class="hr-sub">Position changes</div><div class="hr-list">${movers.map(x => `<div><span>${e(x.name)}</span>${mv(x)}</div>`).join('') || '<span class="hr-note">No one moved.</span>'}</div>`
       + `<a href="past-hour.html?board=${cur}">Full report &rarr;</a>`;
   }
-  body.addEventListener('click', ev => { const t = ev.target.closest('[data-hr]'); if (t && data) { cur = t.dataset.hr; draw(); } });
-  fetch('/api/hourly?mode=summary').then(r => r.ok ? r.json() : Promise.reject()).then(d => { data = d; draw(); })
-    .catch(() => { body.innerHTML = '<p class="hr-note">No hourly data yet.</p>'; });
+  async function load() {
+    const sp = span;
+    if (cache[sp] !== undefined && cache[sp] !== null) { draw(); return; }
+    cache[sp] = undefined; draw();
+    try { const r = await fetch(`/api/hourly?mode=summary&span=${sp}`); if (!r.ok) throw new Error(); cache[sp] = await r.json(); }
+    catch (x) { cache[sp] = null; }
+    if (sp === span) draw();
+  }
+  body.addEventListener('click', ev => {
+    const sb = ev.target.closest('[data-span]');
+    if (sb) { try { localStorage.setItem('hrSpan', sb.dataset.span); } catch (x) {} window.dispatchEvent(new Event('hr-span')); return; }   // pages listen to this too
+    const t = ev.target.closest('[data-hr]'); if (t) { cur = t.dataset.hr; draw(); }
+  });
+  window.addEventListener('hr-span', () => { span = getSpan(); load(); });
+  load();
 })();
