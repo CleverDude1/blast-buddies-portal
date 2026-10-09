@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clan Updates | Blast Buddies Tracker</title>
+<link rel="icon" href="images/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="clan-updates">
+<template id="page-content">
+<section class="panel"><h1 class="page-title">Clan Updates</h1>
+  <p class="muted">Members leaving, renames, access changes and color changes. Data is collected hourly, so times are estimates.</p></section>
+<div class="toolbar">
+  <input class="search" id="cuSearch" placeholder="Search for a clan (current or old name/tag)">
+  <div class="seg" id="cuKinds">
+    <button data-k="all" class="on">All</button><button data-k="left">Left</button><button data-k="joined">Joined</button>
+    <button data-k="renamed">Renamed</button><button data-k="access">Access</button><button data-k="color">Color</button>
+  </div>
+</div>
+<div class="status" id="cuStatus"></div>
+<div class="board"><div class="board-inner">
+  <div class="lb-row lb-head cu-row"><span class="rank">#</span><span>Clan</span><span>Change</span><span>Old</span><span>New</span><span class="cu-time">Estimated time</span></div>
+  <div id="cuRows"></div>
+</div></div>
+<button class="pill cu-more" id="cuMore" hidden>Load more</button>
+</template>
+<script src="js/layout.js"></script>
+<script>
+(() => {
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const hex = c => '#' + ((Number(c) >>> 0) & 0xFFFFFF).toString(16).padStart(6, '0');
+  const sw = c => `<span class="cu-sw" style="background:${hex(c)}"></span>${hex(c).toUpperCase()}`;
+  const fmt = iso => { const d = new Date(iso), p = n => String(n).padStart(2, '0'); let h = d.getHours(); const ap = h >= 12 ? 'pm' : 'am'; h = h % 12 || 12;
+    return `${p(d.getMonth() + 1)}/${p(d.getDate())} at ${h}:${p(d.getMinutes())} ${ap}`; };
+  const label = { left: 'Member left', joined: 'Member joined', renamed: 'Renamed', access: 'Access', color: 'Color' };
+  const nm = v => v ? `${v.tag ? `[${esc(v.tag)}] ` : ''}${esc(v.name ?? '')}` : '';
+  const cell = {
+    left:    (o, n, d) => [`${o.members} members`, `${n.members} members (−${d})`],
+    joined:  (o, n, d) => [`${o.members} members`, `${n.members} members (+${d})`],
+    renamed: (o, n) => [nm(o), nm(n)],
+    access:  (o, n) => [o.open ? 'Open' : 'Closed', n.open ? 'Open' : 'Closed'],
+    color:   (o, n) => [sw(o.color), sw(n.color)],
+  };
+  let kind = 'all', offset = 0, timer;
+  const rows = document.getElementById('cuRows'), more = document.getElementById('cuMore'), status = document.getElementById('cuStatus');
+
+  async function load(reset) {
+    if (reset) { offset = 0; rows.innerHTML = ''; }
+    status.textContent = 'Loading...';
+    try {
+      const q = encodeURIComponent(document.getElementById('cuSearch').value.trim());
+      const r = await fetch(`/api/hourly?mode=clan-updates&kind=${kind}&q=${q}&offset=${offset}`);
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      rows.insertAdjacentHTML('beforeend', d.rows.map((u, i) => {
+        const [o, n] = cell[u.kind](u.old_value, u.new_value, u.delta);
+        return `<div class="lb-row cu-row"><span class="rank">${offset + i + 1}</span>
+          <span class="pname">${nm(u) || esc(u.clan_id)}</span>
+          <span><b class="cu-badge k-${u.kind}">${label[u.kind]}</b></span>
+          <span class="cu-old">${o}</span><span class="cu-new">${n}</span>
+          <span class="cu-time" title="Happened between ${fmt(u.since_at)} and ${fmt(u.observed_at)}">~ ${fmt(u.observed_at)}</span></div>`;
+      }).join(''));
+      offset += d.rows.length; more.hidden = !d.hasMore;
+      status.textContent = offset ? '' : 'No updates found.';
+    } catch (e) { status.textContent = 'Could not load updates. Please try again later.'; }
+  }
+  document.getElementById('cuKinds').addEventListener('click', e => {
+    const b = e.target.closest('[data-k]'); if (!b) return;
+    kind = b.dataset.k; document.querySelectorAll('#cuKinds button').forEach(x => x.classList.toggle('on', x === b)); load(true);
+  });
+  document.getElementById('cuSearch').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => load(true), 300); });
+  more.onclick = () => load(false);
+  load(true);
+})();
+</script>
+</body>
+</html>
