@@ -109,6 +109,7 @@ async function load() {
     return { rank: i + 1, hm: null, p, level, color,
       tc: compare(p.trophies, b?.trophies, 'high'), wc: compare(p.rankedWins, b?.wins, 'high'), lc: compare(p.rankedLosses, b?.losses, 'low') };
   });
+  CLANPOWER.render($('clanPower'), demo ? [] : CLANPOWER.top3(players.map(p => ({ tag: p.clanTag, color: p.clanColor, score: p.trophies }))), 'trophies', CLAN_COLORS);
   isDemo = demo;
   await applyHourly();
 }
