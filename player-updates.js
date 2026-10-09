@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Player Updates | Blast Buddies Tracker</title>
+<link rel="icon" href="images/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="player-updates">
+<template id="page-content">
+<section class="panel"><h1 class="page-title">Player Updates</h1>
+  <p class="muted">Name changes, top weapon changes, players reaching level 100, and players joining or leaving clans. Data is collected hourly, so times are estimates.</p></section>
+<div class="toolbar">
+  <input class="search" id="puSearch" placeholder="Search for a player or clan (current or old name)">
+  <div class="seg" id="puKinds">
+    <button data-k="all" class="on">All</button><button data-k="renamed">Renamed</button><button data-k="weapon">Weapon</button>
+    <button data-k="level_max">Level 100</button><button data-k="clan_joined">Joined clan</button><button data-k="clan_left">Left clan</button>
+  </div>
+</div>
+<div class="status" id="puStatus"></div>
+<div class="board"><div class="board-inner">
+  <div class="lb-row lb-head cu-row"><span class="rank">#</span><span>Player</span><span>Change</span><span>Old</span><span>New</span><span class="cu-time">Estimated time</span></div>
+  <div id="puRows"></div>
+</div></div>
+<button class="pill cu-more" id="puMore" hidden>Load more</button>
+</template>
+<script src="js/layout.js"></script>
+<script>
+(() => {
+  const WEAPON_NAMES = {};   // optional: weapon id -> name, e.g. 1: 'Assault'
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const num = n => Number(n).toLocaleString();
+  const fmt = iso => { const d = new Date(iso), p = n => String(n).padStart(2, '0'); let h = d.getHours(); const ap = h >= 12 ? 'pm' : 'am'; h = h % 12 || 12;
+    return `${p(d.getMonth() + 1)}/${p(d.getDate())} at ${h}:${p(d.getMinutes())} ${ap}`; };
+  const PH = "this.onerror=null;this.src='images/placeholder.png'";
+  const wp = id => `<img class="cu-wp" src="images/weapons/${esc(id)}.png" alt="" onerror="${PH}">${esc(WEAPON_NAMES[id] || 'Weapon ' + id)}`;
+  const label = { renamed: 'Renamed', weapon: 'Top weapon', level_max: 'Level 100', clan_joined: 'Joined clan', clan_left: 'Left clan' };
+  const cell = {
+    renamed:     (o, n) => [esc(o.name), esc(n.name)],
+    weapon:      (o, n) => [wp(o.weaponId), wp(n.weaponId)],
+    level_max:   (o, n) => [`${num(o.xp)} XP`, `Level ${n.level} (MAX) · ${num(n.xp)} XP`],
+    clan_joined: (o, n) => [o.tag ? `[${esc(o.tag)}]` : 'No clan', `[${esc(n.tag)}]`],
+    clan_left:   (o, n) => [`[${esc(o.tag)}]`, 'No clan'],
+  };
+  let kind = 'all', offset = 0, timer;
+  const rows = document.getElementById('puRows'), more = document.getElementById('puMore'), status = document.getElementById('puStatus');
+
+  async function load(reset) {
+    if (reset) { offset = 0; rows.innerHTML = ''; }
+    status.textContent = 'Loading...';
+    try {
+      const q = encodeURIComponent(document.getElementById('puSearch').value.trim());
+      const r = await fetch(`/api/hourly?mode=player-updates&kind=${kind}&q=${q}&offset=${offset}`);
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      rows.insertAdjacentHTML('beforeend', d.rows.map((u, i) => {
+        const [o, n] = cell[u.kind](u.old_value, u.new_value);
+        return `<div class="lb-row cu-row"><span class="rank">${offset + i + 1}</span>
+          <span class="pname">${u.clan_tag ? `[${esc(u.clan_tag)}] ` : ''}${esc(u.name || u.player_id)}</span>
+          <span><b class="cu-badge k-${u.kind}">${label[u.kind]}</b></span>
+          <span class="cu-old">${o}</span><span class="cu-new">${n}</span>
+          <span class="cu-time" title="Happened between ${fmt(u.since_at)} and ${fmt(u.observed_at)}">~ ${fmt(u.observed_at)}</span></div>`;
+      }).join(''));
+      offset += d.rows.length; more.hidden = !d.hasMore;
+      status.textContent = offset ? '' : 'No updates found.';
+    } catch (e) { status.textContent = 'Could not load updates. Please try again later.'; }
+  }
+  document.getElementById('puKinds').addEventListener('click', e => {
+    const b = e.target.closest('[data-k]'); if (!b) return;
+    kind = b.dataset.k; document.querySelectorAll('#puKinds button').forEach(x => x.classList.toggle('on', x === b)); load(true);
+  });
+  document.getElementById('puSearch').addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => load(true), 300); });
+  more.onclick = () => load(false);
+  load(true);
+})();
+</script>
+</body>
+</html>
