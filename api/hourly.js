@@ -183,7 +183,9 @@ export default async function handler(req, res) {
           out[b] = pts ? summarize(b, span, pts, chain(b, span, pts), clanOf) : { ok: false, unit: BOARDS[b].unit };
         } catch (e) { console.error(`summary ${b} failed:`, e.message); out[b] = { ok: false, unit: BOARDS[b].unit }; }
       }));
-      data = { generatedAt: new Date().toISOString(), span, date: date || null, boards: out };
+           data = { generatedAt: new Date().toISOString(), span, date: date || null, boards: out };
+    } else if (mode === 'clan-updates') {
+      data = await clanUpdates(req.query);
     } else return res.status(400).json({ error: 'unknown mode' });
     res.setHeader('Cache-Control', pastDay ? 'public, s-maxage=3600, stale-while-revalidate=86400' : 'public, s-maxage=300, stale-while-revalidate=600');
     res.status(200).json(data);
