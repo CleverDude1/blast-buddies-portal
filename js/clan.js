@@ -58,6 +58,31 @@ function extractClans(d, depth = 0) {
   return null;
 }
 
+// ================= STRONGEST CLANS (from the player leaderboards) =================
+const POWER = { day: ['Daily', '/api/leaderboard-day', 'kills'], week: ['Weekly', '/api/leaderboard-week', 'kills'], ranked: ['Ranked', `/api/leaderboard-ranked?season=${CONFIG.currentSeason}`, 'trophies'] };
+let powerBoard = 'day', powerLists = null;
+function playersOf(d, dep = 0) {
+  if (Array.isArray(d)) return d;
+  if (!d || typeof d !== 'object' || dep > 3) return null;
+  for (const v of Object.values(d)) if (Array.isArray(v) && v.length && typeof v[0] === 'object' && 'playerId' in v[0]) return v;
+  for (const v of Object.values(d)) { const f = playersOf(v, dep + 1); if (f) return f; }
+  return null;
+}
+async function drawPower() {
+  if (!powerLists) {
+    const get = async u => { try { const r = await fetch(u); return r.ok ? (playersOf(await r.json()) || []) : []; } catch (e) { return []; } };
+    const [day, week, ranked] = await Promise.all(Object.values(POWER).map(p => get(p[1])));
+    const clanOf = new Map();                                   // the weekly board has no clan tags: borrow them from daily + ranked
+    for (const p of [...ranked, ...day]) if (p.clanTag) clanOf.set(p.playerId, p);
+    powerLists = { day, week, ranked, clanOf };
+  }
+  const [, , unit] = POWER[powerBoard];
+  const items = powerLists[powerBoard].slice(0, 50).map(p => { const c = p.clanTag ? p : powerLists.clanOf.get(p.playerId); return { tag: c?.clanTag, color: c?.clanColor, score: unit === 'trophies' ? p.trophies : p.kills }; });
+  const seg = `<div class="seg">${Object.entries(POWER).map(([key, v]) => `<button data-p="${key}" class="${key === powerBoard ? 'on' : ''}">${v[0]}</button>`).join('')}</div>`;
+  CLANPOWER.render($('clanPower'), CLANPOWER.top3(items), unit, CLAN_COLORS, seg, 'STRONGEST CLANS ON THE PLAYER LEADERBOARDS');
+}
+$('clanPower').addEventListener('click', e => { const b = e.target.closest('[data-p]'); if (b) { powerBoard = b.dataset.p; drawPower(); } });
+
 // ================= LOAD =================
 let rows = [];
 async function load() {
@@ -146,4 +171,5 @@ $('xlsx').onclick = () => {
   XLSX.writeFile(wb, `blast-buddies-clans-${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
+drawPower();
 load();
