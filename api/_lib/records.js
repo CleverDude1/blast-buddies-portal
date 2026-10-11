@@ -26,10 +26,18 @@ async function sb(path, { method = 'GET', body, prefer } = {}) {
   return t ? JSON.parse(t) : null;
 }
 
-// items: [{ board: 'day'|'week'|'ranked'|'clan', payload, at (ms) }]  ->  { best: {recordKey: row}, l100: Map(playerId -> row) }
-export function collect(items) {
-  const best = {}, l100 = new Map();
-  const offer = (key, value, row) => { if (Number.isFinite(value) && (!best[key] || value > best[key].value)) best[key] = { key, value, ...row }; };
+const TOP = 3;   // how many holders are kept per record
+
+export const newAcc = () => ({ best: {}, l100: new Map() });
+
+// items: [{ board: 'day'|'week'|'ranked'|'clan', payload, at (ms) }]  ->  acc = { best: {recordKey: Map(holderId -> row)}, l100: Map(playerId -> row) }
+// Each holder only counts once per record (their own best score), so the top 3 are 3 different players / clans.
+export function collect(items, acc = newAcc()) {
+  const offer = (key, value, row) => {
+    if (!Number.isFinite(value) || !row.holder_id) return;
+    const m = (acc.best[key] ||= new Map()), prev = m.get(row.holder_id);
+    if (!prev || value > prev.value) m.set(row.holder_id, { key, value, ...row });
+  };
   for (const { board, payload, at } of items) {
     if (!payload) continue;
     const when = new Date(at).toISOString();
@@ -45,24 +53,33 @@ export function collect(items) {
       else if (board === 'ranked') offer('ranked_trophies', Number(p.trophies), { ...who, period: `Season ${payload.season ?? '?'}` });
       const xp = Number(p.totalXp);
       if (xp >= LEVEL_100_XP) {
-        const prev = l100.get(p.playerId);
-        if (!prev || xp > prev.total_xp) l100.set(p.playerId, { player_id: p.playerId, name: p.name, clan_tag: p.clanTag || null, clan_color: p.clanColor ?? null, total_xp: xp });
+        const prev = acc.l100.get(p.playerId);
+        if (!prev || xp > prev.total_xp) acc.l100.set(p.playerId, { player_id: p.playerId, name: p.name, clan_tag: p.clanTag || null, clan_color: p.clanColor ?? null, total_xp: xp });
       }
     }
   }
-  return { best, l100 };
+  return acc;
 }
 
-export async function commit({ best, l100 }, now = Date.now()) {
-  const keys = Object.keys(best);
+export async function commit(acc, now = Date.now()) {
+  const keys = Object.keys(acc.best);
   if (keys.length) {
-    const cur = new Map((await sb('records?select=key,value')).map(r => [r.key, Number(r.value)]));
-    const rows = keys.filter(k => !(cur.get(k) >= best[k].value)).map(k => best[k]);   // only what beats the stored record
-    if (rows.length) await sb('records?on_conflict=key', { method: 'POST', body: rows, prefer: 'resolution=merge-duplicates,return=minimal' });
+    const have = await sb('records?select=key,holder_id,value'), cur = {};
+    for (const r of have) (cur[r.key] ||= new Map()).set(r.holder_id, Number(r.value));
+    const rows = [], drop = [];
+    for (const key of keys) {
+      const stored = cur[key] || new Map(), cand = [...acc.best[key].values()], merged = new Map(stored);
+      for (const c of cand) if (!(merged.get(c.holder_id) >= c.value)) merged.set(c.holder_id, c.value);
+      const keep = new Set([...merged].sort((a, b) => b[1] - a[1]).slice(0, TOP).map(x => x[0]));
+      for (const c of cand) if (keep.has(c.holder_id) && !(stored.get(c.holder_id) >= c.value)) rows.push(c);   // new or improved
+      for (const id of stored.keys()) if (!keep.has(id)) drop.push([key, id]);                                    // pushed out of the top 3
+    }
+    if (rows.length) await sb('records?on_conflict=key,holder_id', { method: 'POST', body: rows, prefer: 'resolution=merge-duplicates,return=minimal' });
+    for (const [key, id] of drop) await sb(`records?key=eq.${encodeURIComponent(key)}&holder_id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' });
   }
-  if (l100.size) {
+  if (acc.l100.size) {
     const ts = new Date(now).toISOString();
-    await sb('level100_players?on_conflict=player_id', { method: 'POST', body: [...l100.values()].map(r => ({ ...r, last_seen_at: ts })), prefer: 'resolution=merge-duplicates,return=minimal' });
+    await sb('level100_players?on_conflict=player_id', { method: 'POST', body: [...acc.l100.values()].map(r => ({ ...r, last_seen_at: ts })), prefer: 'resolution=merge-duplicates,return=minimal' });
   }
 }
 
@@ -71,11 +88,12 @@ export const recordPayloads = (byBoard, at = Date.now()) =>
   commit(collect(Object.entries(byBoard).filter(([, p]) => p).map(([board, payload]) => ({ board, payload, at }))), at);
 
 export async function loadStats() {
-  const [records, players] = await Promise.all([
-    sb('records?select=*'),
+  const keys = ['daily_kills', 'weekly_kills', 'ranked_trophies', 'clan_kills'];
+  const [players, ...tops] = await Promise.all([
     sb('level100_players?select=player_id,name,clan_tag,clan_color,total_xp,first_seen_at&order=total_xp.desc&limit=1000'),
+    ...keys.map(k => sb(`records?select=*&key=eq.${k}&order=value.desc&limit=${TOP}`)),
   ]);
-  return { records: Object.fromEntries(records.map(r => [r.key, r])), level100: { count: players.length, players } };
+  return { records: Object.fromEntries(keys.map((k, i) => [k, tops[i]])), level100: { count: players.length, players } };
 }
 
 // how many of the top N players use each weapon: { total, list: [{ id, count }] sorted most used first }
@@ -88,17 +106,15 @@ export function weaponCounts(payload, top = 50) {
 // Rebuild records + level-100 players from the snapshots you already stored. Walks raw_snapshots by id for ~40 s, then returns where to continue.
 export async function backfill(after = 0, budgetMs = 40000) {
   const boardOf = Object.fromEntries(Object.entries(URLS).map(([b, u]) => [u, b]));
-  const t0 = Date.now(), acc = { best: {}, l100: new Map() };
+  const t0 = Date.now(), acc = newAcc();
   let cursor = after, done = false, seen = 0;
   while (Date.now() - t0 < budgetMs) {
     const rows = await sb(`raw_snapshots?select=id,url,fetched_at,payload&id=gt.${cursor}&order=id.asc&limit=20`);
     if (!rows.length) { done = true; break; }
     const items = [];
     for (const r of rows) { cursor = r.id; seen++; if (boardOf[r.url]) items.push({ board: boardOf[r.url], payload: r.payload, at: Date.parse(r.fetched_at) }); }
-    const part = collect(items);
-    for (const [k, v] of Object.entries(part.best)) if (!acc.best[k] || v.value > acc.best[k].value) acc.best[k] = v;
-    for (const [id, v] of part.l100) if (!acc.l100.has(id) || v.total_xp > acc.l100.get(id).total_xp) acc.l100.set(id, v);
+    collect(items, acc);
   }
   await commit(acc);
-  return { done, next: cursor, snapshotsScanned: seen, records: Object.keys(acc.best).length, level100Found: acc.l100.size };
+  return { done, next: cursor, snapshotsScanned: seen, level100Found: acc.l100.size };
 }
