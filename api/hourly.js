@@ -1,11 +1,13 @@
 // "What changed". Works out gains and position changes from the stored JSON snapshots (raw_snapshots) plus the live API.
-//   /api/hourly?mode=prev&board=day|week|ranked|clan&span=hour|day   -> per-entry gains for the leaderboard pages (+2k labels, arrows)
-//   /api/hourly?mode=summary&span=hour|day[&date=YYYY-MM-DD]          -> totals, every entry's gain/position change, strongest clans, graph lines
+//   /api/hourly?mode=prev&board=day|week|ranked|clan&span=hour|day|week   -> per-entry gains for the leaderboard pages (+2k labels, arrows)
+//   /api/hourly?mode=summary&span=hour|day|week[&date=YYYY-MM-DD]         -> totals, every entry's gain/position change, strongest clans, graph lines
 //   /api/hourly?mode=clan-updates&kind=all|left|joined|renamed|access|color&q=&offset=   -> Clan Updates feed
 //   /api/hourly?mode=vote                                             -> Community Vote (GET = status/results, POST = submit ballot)
 //
 // span=hour : the stored snapshot closest to 1 hour ago  ->  live.
 // span=day  : EVERY stored snapshot from 00:00 UTC today ->  live.   With &date=...: every snapshot of that past day, 00:00 to 00:00 UTC.
+// span=week : the 7 UTC days ending today (or ending on &date=...), sampled to roughly one snapshot per 3 hours (always keeping the
+//             first and last snapshot of each day) ->  live.
 //
 // Why every snapshot: only the top 50 are stored, so people enter and leave the list during the day. Gains are added up snapshot by
 // snapshot for everyone who shows up at any point, so nobody is dropped just because they were not on the list at the start.
@@ -15,11 +17,15 @@
 //   - leaves the list: nothing is counted after that -> marked partial (~)
 //   - a daily/weekly board that reset between two snapshots: values since the reset are counted
 // The DAILY board is the exception for span=day: it starts at 0 at 00:00 UTC, so a player's value IS what they gained that day.
+// For span=week the DAILY board is summed per UTC day: each day's last seen value is added up (partial = missing from the list on some days).
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, VOTE_SALT
 import { URLS, rest, extractList, fetchLive, normPlayer, normClan } from './_lib/shared.js';
 import { clanUpdates } from './_lib/clan-updates.js';
 import { playerUpdates } from './_lib/player-updates.js';
 import voteHandler from './_lib/vote.js';
+
+// a week summary reads a lot of snapshots; give Vercel more time (remove if your plan does not allow it)
+export const config = { maxDuration: 60 };
 
 const BOARDS = {
   day:    { kind: 'player', metric: 'kills',    unit: 'kills',    resets: true,  keys: ['kills', 'deaths'] },
@@ -28,6 +34,7 @@ const BOARDS = {
   clan:   { kind: 'clan',   metric: 'kills',    unit: 'kills',    resets: false, keys: ['kills', 'members'] },
 };
 const MIN = 60e3, DAY = 864e5;
+const WEEK_DAYS = 7, WEEK_STEP = 3 * 60 * MIN, CHUNK = 12;   // WEEK_STEP: lower = more accurate but slower
 const FIELD = { wins: 'ranked_wins', losses: 'ranked_losses', members: 'member_count' };
 const fv = (r, x) => Number(r[FIELD[x] ?? x] ?? 0) || 0;
 const idKey = kind => (kind === 'clan' ? 'clan_id' : 'player_id');
@@ -59,6 +66,26 @@ async function snapshotsBetween(url, fromMs, toMs) {     // every stored snapsho
   const rows = await rest(`raw_snapshots?select=fetched_at,payload&url=eq.${enc(url)}&fetched_at=gte.${enc(new Date(fromMs).toISOString())}&fetched_at=lt.${enc(new Date(toMs).toISOString())}&order=fetched_at.asc`, { all: true, max: 200 });
   return rows.map(r => ({ at: Date.parse(r.fetched_at), payload: r.payload }));
 }
+// a week is thousands of snapshots: read only ids + timestamps first, keep ~1 per WEEK_STEP (plus the first and last of every day,
+// which bracket the 00:00 reset), then fetch just those payloads
+async function sampledSnapshots(url, fromMs, toMs) {
+  const spans = [];
+  for (let t = fromMs; t < toMs; t += DAY) spans.push([t, Math.min(t + DAY, toMs)]);
+  const lists = await Promise.all(spans.map(([a, b]) => rest(
+    `raw_snapshots?select=id,fetched_at&url=eq.${enc(url)}&fetched_at=gte.${enc(new Date(a).toISOString())}&fetched_at=lt.${enc(new Date(b).toISOString())}&order=fetched_at.asc&limit=1000`)));
+  const keep = new Map();                                   // id -> fetched_at
+  for (const metas of lists) {
+    if (!metas.length) continue;
+    keep.set(metas[0].id, metas[0].fetched_at);
+    keep.set(metas[metas.length - 1].id, metas[metas.length - 1].fetched_at);
+    let last = -Infinity;
+    for (const m of metas) { const at = Date.parse(m.fetched_at); if (at - last >= WEEK_STEP) { keep.set(m.id, m.fetched_at); last = at; } }
+  }
+  const ids = [...keep.keys()], chunks = [];
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+  const got = await Promise.all(chunks.map(c => rest(`raw_snapshots?select=id,payload&id=in.(${c.join(',')})`)));
+  return got.flat().map(r => ({ at: Date.parse(keep.get(r.id)), payload: r.payload })).sort((a, b) => a.at - b.at);
+}
 const dayStartOf = dateStr => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
   if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]);
@@ -73,6 +100,13 @@ async function pointsFor(board, span, dateStr) {
     const snap = await hourSnapshot(url), p0 = snap && point(snap.at, snap.payload), live = await liveRows(board);
     return p0 && live.length ? [p0, { at: now, rows: live, live: true }] : null;
   }
+  if (span === 'week') {
+    const endDay = dayStartOf(dateStr), start = endDay - (WEEK_DAYS - 1) * DAY, end = endDay + DAY, isToday = now >= endDay && now < end;
+    const snaps = await sampledSnapshots(url, start, isToday ? now + 1 : end);
+    const pts = snaps.map(s => point(s.at, s.payload)).filter(Boolean);
+    if (isToday) { const live = await liveRows(board); if (live.length) pts.push({ at: now, rows: live, live: true }); }
+    return pts.length >= 2 ? pts : null;
+  }
   const start = dayStartOf(dateStr), end = start + DAY, isToday = now >= start && now < end;
   const snaps = await snapshotsBetween(url, start, isToday ? now + 1 : end);
   const pts = snaps.map(s => point(s.at, s.payload)).filter(Boolean);
@@ -84,6 +118,9 @@ async function pointsFor(board, span, dateStr) {
 function chain(board, span, pts) {
   const B = BOARDS[board], k = idKey(B.kind), M = B.metric, n = pts.length, last = n - 1;
   const exact = board === 'day' && span === 'day';          // daily board: value = what was gained today
+  const perDay = board === 'day' && span === 'week';        // daily board over a week: add up each UTC day's last value
+  const dayOf = pts.map(p => Math.floor(p.at / DAY)), totalDays = new Set(dayOf).size;
+  const zero = () => Object.fromEntries(B.keys.map(x => [x, 0]));
   const maps = pts.map(p => new Map(p.rows.map(r => [r[k], r])));
   const cutoff = pts.map(p => Math.min(...p.rows.map(r => fv(r, M))));        // everyone not on the list is below this
   const reset = pts.map((_, i) => {                                             // did the board reset between point i-1 and i?
@@ -95,11 +132,16 @@ function chain(board, span, pts) {
   const E = new Map();
   for (let i = 0; i < n; i++) for (const [id, r] of maps[i]) {
     let e = E.get(id);
-    if (!e) E.set(id, e = { id, firstIdx: i, est: false, gain: Object.fromEntries(B.keys.map(x => [x, 0])), cum: [] });
+    if (!e) E.set(id, e = { id, firstIdx: i, est: false, gain: zero(), cum: [], base: zero(), cur: zero(), curDay: null, days: new Set() });
     e.name = r.name ?? e.name; e.tag = r.clan_tag ?? r.tag ?? e.tag ?? ''; e.color = r.clan_color ?? r.color ?? e.color ?? null;
     e.lastIdx = i; e.lastRow = r;
-    if (exact) for (const x of B.keys) e.gain[x] = fv(r, x);                                    // value at the latest sighting
-    else if (i > 0) {
+    if (exact) {
+      for (const x of B.keys) e.gain[x] = fv(r, x);                                             // value at the latest sighting
+    } else if (perDay) {
+      if (e.curDay !== dayOf[i]) { for (const x of B.keys) { e.base[x] += e.cur[x]; e.cur[x] = 0; } e.curDay = dayOf[i]; }
+      e.days.add(dayOf[i]);
+      for (const x of B.keys) { e.cur[x] = fv(r, x); e.gain[x] = e.base[x] + e.cur[x]; }       // finished days + today's value so far
+    } else if (i > 0) {
       const a = maps[i - 1].get(id);
       if (reset[i]) for (const x of B.keys) e.gain[x] += fv(r, x);                              // reset: everything since the reset
       else if (a) for (const x of B.keys) e.gain[x] += fv(r, x) - fv(a, x);                     // seen twice in a row: real difference
@@ -112,7 +154,8 @@ function chain(board, span, pts) {
     const first = maps[0].get(e.id), fin = maps[last].get(e.id);
     const status = e.lastIdx === last ? (e.firstIdx === 0 ? 'in' : 'new') : (e.firstIdx === 0 ? 'left' : 'passed');
     const firstRank = first?.rank ?? null, rank = fin?.rank ?? null;
-    return { ...e, status, firstRank, rank, partial: exact ? e.lastIdx < last : (e.est || e.firstIdx > 0 || e.lastIdx < last),
+    return { ...e, status, firstRank, rank,
+             partial: exact ? e.lastIdx < last : perDay ? (e.days.size < totalDays || e.lastIdx < last) : (e.est || e.firstIdx > 0 || e.lastIdx < last),
              move: status === 'in' && !anyReset ? firstRank - rank : 0, value: fv(e.lastRow, M) };
   });
   return { list, anyReset, n };
@@ -170,8 +213,8 @@ export default async function handler(req, res) {
     if (req.query.mode === 'vote') return voteHandler(req, res);
 
     const { mode, board } = req.query;
-    const span = req.query.span === 'day' ? 'day' : 'hour';
-    const date = span === 'day' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : undefined;
+    const span = req.query.span === 'day' || req.query.span === 'week' ? req.query.span : 'hour';
+    const date = span !== 'hour' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '') ? req.query.date : undefined;
     if (date && dayStartOf(date) > Date.now()) return res.status(400).json({ error: 'date is in the future' });
     const pastDay = date && dayStartOf(date) + DAY <= Date.now();
     let data;
@@ -192,10 +235,12 @@ export default async function handler(req, res) {
       data = { generatedAt: new Date().toISOString(), span, date: date || null, boards: out };
     } else if (mode === 'clan-updates') {
       data = await clanUpdates(req.query);
-       } else if (mode === 'player-updates') {
+    } else if (mode === 'player-updates') {
       data = await playerUpdates(req.query);
     } else return res.status(400).json({ error: 'unknown mode' });
-    res.setHeader('Cache-Control', pastDay ? 'public, s-maxage=3600, stale-while-revalidate=86400' : 'public, s-maxage=300, stale-while-revalidate=600');
+    res.setHeader('Cache-Control', pastDay ? 'public, s-maxage=3600, stale-while-revalidate=86400'
+      : span === 'week' ? 'public, s-maxage=900, stale-while-revalidate=1800'
+      : 'public, s-maxage=300, stale-while-revalidate=600');
     res.status(200).json(data);
   } catch (e) {
     console.error(e);
