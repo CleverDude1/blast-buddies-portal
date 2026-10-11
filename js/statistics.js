@@ -45,19 +45,19 @@ function levelCard() {
       <input class="search st-filter" id="lvFilter" placeholder="Search name or clan" autocomplete="off"><div class="st-list" id="lvList">${lvRows('')}</div>`; } : null });
 }
 
-// ---------- records ----------
+// ---------- records (top 3 holders each) ----------
 const periodLabel = (key, r) => key === 'weekly_kills' ? 'Week of ' + r.period : key === 'ranked_trophies' ? `${r.period} · ${String(r.achieved_at).slice(0, 10)}` : (r.period || String(r.achieved_at).slice(0, 10));
+const nameHtml = (r, isClan) => `<b>${esc(r.holder_name)}</b> ${isClan ? (r.clan_tag ? '[' + tagHtml(r.clan_tag, r.clan_color) + ']' : '') : tagHtml(r.clan_tag, r.clan_color)}`;
 function recordCard(key, title, sub, iconId, isClan) {
-  const r = stats?.records?.[key];
-  if (!r) return card(key, { icon: iconId, title, sub, value: '—', notes: [stats ? 'No record yet' : waiting()] });
-  const when = periodLabel(key, r);
-  return card(key, { icon: iconId, title, sub, value: fmt(r.value),
-    notes: [`<b>${esc(r.holder_name)}</b> ${isClan ? '[' + tagHtml(r.clan_tag, r.clan_color) + ']' : tagHtml(r.clan_tag, r.clan_color)}`, `<span class="st-ok">${esc(when)}</span>`],
-    details: () => `<h3>${title}</h3><div class="muted">${sub}</div><div class="dlg-grid">
-      <div>${isClan ? 'Clan' : 'Player'}<b>${esc(r.holder_name)}</b></div>
-      <div>${isClan ? 'Tag' : 'Clan'}<b>${r.clan_tag ? `<span class="st-swatch" style="background:${colorOf(r.clan_color)}"></span>${tagHtml(r.clan_tag, r.clan_color)}` : '—'}</b></div>
-      <div>Record<b>${fmt(r.value)}</b></div><div>When<b>${esc(when)}</b></div>
-      <div>${isClan ? 'Clan' : 'Player'} ID<b style="font-size:13px">${esc(r.holder_id)}</b></div></div>` });
+  const list = stats?.records?.[key] || [];
+  if (!list.length) return card(key, { icon: iconId, title, sub, notes: [stats ? 'No records yet' : waiting()] });
+  const body = `<div class="st-recs">${list.map((r, i) => `<div class="st-rec"><b class="st-rank r${i + 1}">${i + 1}</b>
+      <div class="who">${nameHtml(r, isClan)}<small class="st-ok">${esc(periodLabel(key, r))}</small></div><span class="val">${fmt(r.value)}</span></div>`).join('')}</div>`;
+  return card(key, { icon: iconId, title, sub, body,
+    details: () => `<h3>${title}</h3><div class="muted">${sub}. Top ${list.length}, one entry per ${isClan ? 'clan' : 'player'} (their own best).</div>
+      <div class="st-list">${list.map((r, i) => `<div class="st-row" style="grid-template-columns:34px 1fr auto"><span class="n">${i + 1}</span>
+        <span class="nm" style="white-space:normal">${nameHtml(r, isClan)}<br><small class="muted">${esc(periodLabel(key, r))} · ${isClan ? 'clan' : 'player'} ID ${esc(r.holder_id)}${isClan && r.clan_tag ? ` · <span class="st-swatch" style="background:${colorOf(r.clan_color)}"></span>color ${esc(r.clan_color)}` : ''}</small></span>
+        <span class="r"><b style="color:var(--text);font-size:17px">${fmt(r.value)}</b></span></div>`).join('')}</div>` });
 }
 
 // ---------- popular guns (top 3 of the top 50) ----------
@@ -98,10 +98,10 @@ function onlineCard() {
 function render() {
   $('stGrid').innerHTML = [
     levelCard(), onlineCard(),
-    recordCard('daily_kills', 'Highest daily kills', 'Daily · all time', 'daily'),
-    recordCard('weekly_kills', 'Highest weekly kills', 'Weekly · all time', 'weekly'),
-    recordCard('ranked_trophies', 'Highest ranked trophies', 'Ranked · all time', 'season'),
-    recordCard('clan_kills', 'Highest clan kills', 'Clans · all time', 'clans', true),
+    recordCard('daily_kills', 'Highest daily kills', 'Top 3 · daily · all time', 'daily'),
+    recordCard('weekly_kills', 'Highest weekly kills', 'Top 3 · weekly · all time', 'weekly'),
+    recordCard('ranked_trophies', 'Highest ranked trophies', 'Top 3 · ranked · all time', 'season'),
+    recordCard('clan_kills', 'Highest clan kills', 'Top 3 · clans · all time', 'clans', true),
     gunCard('day', 'Daily'), gunCard('week', 'Weekly'), gunCard('ranked', 'Ranked'),
   ].join('');
 }
