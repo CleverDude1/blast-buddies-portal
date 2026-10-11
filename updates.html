@@ -45,7 +45,7 @@
 <script src="js/layout.js"></script>
 <script>
 // ================= EDIT YOUR UPDATES HERE =================
-// Newest first. type: 'major' | 'minor' | 'patch'.  Item kinds: new, tool, fix, balance, server, map, weapon, info
+// Newest first. type: 'major' | 'minor' | 'patch'. date is optional (YYYY-MM-DD).  Item kinds: new, tool, fix, balance, server, map, weapon, info
 const KIND = { new: '✨', tool: '🛠️', fix: '🐛', balance: '⚖️', server: '📦', map: '🗺️', weapon: '🔫', info: 'ℹ️' };
 
 const UPDATES = {
@@ -59,12 +59,37 @@ const UPDATES = {
     // ]},
   ],
   game: [
-    // Example (delete the // to use it):
-    // { version: 'Season 3', type: 'major', date: '2026-09-20', items: [
-    //   ['new',     '[Maps] Added the new map Skulltown'],
-    //   ['balance', '[Weapons] Sniper damage reduced'],
-    //   ['fix',     '[Game] Fixed players getting stuck on spawn'],
-    // ]},
+    { version: '2.0', type: 'major', items: [
+      ['info',   '[Poki] Blast Buddies 2.0 was just accepted by Poki'],
+      ['weapon', '[Weapons] Weapon attachments'],
+      ['weapon', '[Weapons] 2 new guns'],
+      ['map',    '[Maps] 2 new maps'],
+      ['new',    '[Game] Minimap'],
+      ['new',    '[UI] Overhauled UI and HUD, and a better portrait UI'],
+      ['new',    '[Gameplay] Better gunplay feel with reload animations and other first-person view improvements'],
+      ['new',    '[Visuals] Better effects and new skins'],
+      ['new',    '[Battle Pass] Season 3 battle pass'],
+    ]},
+    { version: '1.3', type: 'major', items: [
+      ['new', '[Game modes] 2 new game modes: Hardpoint and Conquest'],
+      ['new', '[Ranked] Season 2 of ranked'],
+      ['new', '[Battle Pass] New season 2 battle pass'],
+      ['new', '[Social] Clans'],
+      ['new', '[Social] Friends'],
+    ]},
+    { version: '1.2', type: 'minor', date: '2026-06-18', items: [
+      ['map',    '[Maps] New map'],
+      ['weapon', '[Weapons] New secondary weapon'],
+    ]},
+    { version: '1.1', type: 'major', items: [
+      ['info',   '[Poki] Blast Buddies is live on Poki'],
+      ['new',    '[Poki] Poki chat'],
+      ['new',    '[Poki] Poki accounts'],
+      ['weapon', '[Weapons] 9 new grenades'],
+      ['weapon', '[Weapons] 3 new weapons'],
+      ['fix',    '[Game] Better anti-cheat'],
+      ['fix',    '[Game] Tons of fixes'],
+    ]},
   ]
 };
 
@@ -82,7 +107,7 @@ function render() {
       <div class="up-top">
         <span class="up-badge ${esc(u.type)}">${esc(u.type.toUpperCase())}</span>
         <span class="up-ver">${esc(u.version)}</span>
-        <span class="up-date">${fmtDate(u.date)}</span>
+        ${u.date ? `<span class="up-date">${fmtDate(u.date)}</span>` : ''}
       </div>
       <ul class="up-list">${u.items.map(([k, t]) => `<li><span><span class="up-ic">${KIND[k] || KIND.info}</span> ${esc(t)}</span></li>`).join('')}</ul>
     </article>`).join('') : '<p class="up-empty">No updates posted here yet.</p>';
