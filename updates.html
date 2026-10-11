@@ -51,13 +51,35 @@ const KIND = { new: '✨', tool: '🛠️', fix: '🐛', balance: '⚖️', serv
 
 const UPDATES = {
   tracker: [
-    { version: 'v26-10-11', type: 'major', date: '2026-10-11', items: [
-      ['new',  '[Statistics] New Statistics page: players seen at level 100, all-time daily, weekly, ranked and clan records, most popular guns, and players online right now'],
-      ['tool', '[Community Vote] Results now show as a community tier list or a ranking, with your own picks marked'],
+    { version: '1.0', type: 'major', items: [
+      ['info',   '[Tracker] First release of Blast Buddies Tracker'],
+      ['new',    '[Rankings] Daily, Weekly, Ranked and Clan leaderboards. Players show level, position, kills, deaths, KDR, top weapon and clan, with more information such as total XP'],
+      ['new',    '[Ranked] Ranked leaderboard shows trophies, wins and losses'],
+      ['new',    '[Clan Rankings] Clans show kills, whether they are open or closed to new members, member count and how full the clan is'],
+      ['tool',   '[Podium] Tabs for Overall, Day, Week, Ranked, Clan and Monthly. Medals are earned by finishing top 3 on the daily, ranked and clan boards and top 10 on the weekly board. Shows each player\'s medals, XP, level, top weapon and clan'],
+      ['tool',   '[Podium] Monthly tab: the clan with the most medals from its members is the winner of the month. Browse past months and see everyone\'s medals for that month'],
+      ['tool',   '[Compare] Compare two players or two clans. Shows who is leading, current or last leaderboard positions, and the differences in numbers and percentages'],
+      ['tool',   '[Compare] Players: kills, deaths and KDR for daily, weekly and ranked, plus trophies, wins and losses for ranked'],
+      ['tool',   '[Compare] Average score graphs across daily, weekly and ranked'],
+      ['tool',   '[Compare] Live graphs for kills, deaths, KDR, wins, losses and trophies, with final scores for both sides. Daily: today or yesterday. Weekly: current or previous week. Ranked: last 7 days, last 30 days or the whole season'],
+      ['tool',   '[Compare] Clans: kills, open or closed, number of members and capacity filled in percent, average and max kills, average and max members, and graphs of kills and members over the last 7, 30 and 365 days'],
+      ['new',    '[Player Updates] Name changes, top weapon changes, players reaching level 100, and players joining or leaving clans. Data is collected hourly, so times are estimates'],
+      ['new',    '[Clan Updates] Members leaving, renames, access changes and color changes. Data is collected hourly, so times are estimates'],
+      ['new',    '[Statistics] How many players have reached level 100, with their names and clans'],
+      ['new',    '[Statistics] Players online right now across the 3 regions, with the number of rooms and a breakdown by server'],
+      ['new',    '[Statistics] Highest daily, weekly, ranked and clan scores of all time, with the player or clan that holds each'],
+      ['new',    '[Statistics] Most popular guns for daily, weekly and ranked'],
+      ['map',    '[Maps] List of maps with their images. Click one for more information'],
+      ['weapon', '[Weapons] List of weapons with their images. Click one for more information'],
+      ['info',   '[Abilities] List of abilities with their images. Click one for more information'],
+      ['tool',   '[Community Vote] Vote and make tier lists for maps, primary, secondary and grenades. Results show as a community tier list or a ranking'],
+      ['new',    '[Updates] Update logs for both the game and the tracker'],
+      ['tool',   '[Past Hour widget] Sidebar widget for the last hour or the last day (since 00:00 UTC) on the Daily, Weekly, Ranked and Clans boards. Shows total gained, position changes, top gains and the biggest position changes, with a link to the full report'],
+      ['tool',   '[Full Report] Detailed report with the whole leaderboard of changes for the hour, day or week. Look back at previous days and weeks'],
+      ['tool',   '[Full Report] Strongest clans on the leaderboard, total gained, how many players gained, position changes (up and down), players who entered and left the top list, and the biggest climb and drop'],
+      ['tool',   '[Full Report] Table of every player with kills gained, previous position and change (NEW for new entries). Numbers for players outside the top 50 are estimated. A graph of the gains is at the bottom of the page'],
+      ['info',   '[Levels] Player levels are estimated from XP, because the exact game formula is not public'],
     ]},
-    // { version: 'v26-10-04', type: 'minor', date: '2026-10-04', items: [
-    //   ['tool', '[Weapons] Weapon pages are now clickable with a details window'],
-    // ]},
   ],
   game: [
     { version: '2.0', type: 'major', date: '2026-09-28', items: [
