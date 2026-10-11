@@ -26,3 +26,11 @@
 .st-reg{margin-top:16px;font-weight:800;display:flex;justify-content:space-between}
 .st-reg small{color:var(--muted);font-weight:600}
 .st-swatch{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:6px;border:1px solid rgba(0,0,0,.4)}
+.st-recs{display:grid;gap:10px;margin:8px 0 2px}
+.st-rec{display:grid;grid-template-columns:30px 1fr auto;gap:12px;align-items:center}
+.st-rec .who{min-width:0}
+.st-rec .who b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-rec .who small{display:block;font-size:12px;margin-top:1px}
+.st-rec .val{font-size:22px;font-weight:800}
+.st-rank{width:28px;height:28px;border-radius:50%;background:#2b3524;display:flex;align-items:center;justify-content:center;font-size:13px}
+.st-rank.r1{background:#f2b84b;color:#3a2200}.st-rank.r2{background:#c7ccd1;color:#1d2125}.st-rank.r3{background:#c98a52;color:#2c1500}
