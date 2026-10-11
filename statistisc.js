@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Statistics – Blast Buddies Tracker</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/statistics.css">
+</head>
+<body data-page="statistics">
+
+<template id="page-content">
+  <div class="st-top">
+    <h1 class="page-title">Statistics</h1>
+    <p class="muted" id="status">Loading...</p>
+  </div>
+  <div class="map-grid" id="stGrid"></div>
+
+  <dialog id="dlg">
+    <button class="pill dlg-close" id="dlgClose">Close</button>
+    <div id="dlgBody"></div>
+  </dialog>
+</template>
+
+<script src="js/layout.js"></script>
+<script src="js/clan-colors.js"></script>
+<script src="js/statistics.js"></script>
+</body>
+</html>
