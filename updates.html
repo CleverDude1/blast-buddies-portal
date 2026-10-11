@@ -4,15 +4,94 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Updates | Blast Buddies Tracker</title>
-<link rel="icon" href="images/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
+<link rel="icon" href="images/icons/home.png">
 <link rel="stylesheet" href="css/style.css">
+<style>
+/* ---- updates / release notes ---- */
+.up-wrap{max-width:1100px;margin:0 auto}
+.up-head{text-align:center;margin-bottom:8px}
+.up-head h1{font-size:clamp(28px,4vw,44px);font-weight:800}
+.up-intro{text-align:center;color:#d9dccf;font-style:italic;max-width:760px;margin:12px auto 22px;line-height:1.6}
+.up-intro a{color:#8fa4ff;font-weight:600}
+.up-tabs{display:flex;justify-content:center;margin-bottom:22px}
+.up-tabs .seg{margin:0}
+.up-card{background:rgba(15,20,11,.94);border:1px solid var(--line);border-radius:18px;padding:24px 28px;margin-bottom:20px}
+.up-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.up-badge{font-size:12px;font-weight:800;letter-spacing:.04em;padding:4px 10px;border-radius:8px;color:#06201c;background:#3cc1b5}
+.up-badge.minor{background:var(--gold);color:#3a2200}
+.up-badge.patch{background:#8b9380;color:#10150c}
+.up-ver{font-size:22px;font-weight:800;color:#4fd8c8}
+.up-date{margin-left:auto;color:var(--muted);font-weight:600}
+.up-list{list-style:none;display:grid;gap:10px}
+.up-list li{display:flex;gap:12px;align-items:flex-start;line-height:1.5;color:#e8eadf}
+.up-list li::before{content:"";flex:none;width:16px;height:16px;margin-top:4px;border-radius:50%;border:2px solid #4fd8c8;background:radial-gradient(circle,#4fd8c8 0 3px,transparent 4px)}
+.up-ic{flex:none}
+.up-empty{text-align:center;color:var(--muted);padding:40px 0}
+</style>
 </head>
 <body data-page="updates">
 <template id="page-content">
-<section class="panel"><h1 class="page-title">Updates</h1><p class="muted">Patch notes and site news. Coming soon.</p></section>
+  <div class="up-wrap">
+    <div class="up-head"><h1>Updates</h1></div>
+    <p class="up-intro">This is a community-driven project and we are always looking for ways to improve it. If you have any suggestions or ideas, please share them on our <a id="upDiscord" href="#" target="_blank" rel="noopener">Discord</a>. Thanks!</p>
+    <div class="up-tabs"><div class="seg">
+      <button data-tab="tracker">Tracker updates</button>
+      <button data-tab="game">Game updates</button>
+    </div></div>
+    <div id="upList"></div>
+  </div>
 </template>
+
 <script src="js/layout.js"></script>
+<script>
+// ================= EDIT YOUR UPDATES HERE =================
+// Newest first. type: 'major' | 'minor' | 'patch'.  Item kinds: new, tool, fix, balance, server, map, weapon, info
+const KIND = { new: '✨', tool: '🛠️', fix: '🐛', balance: '⚖️', server: '📦', map: '🗺️', weapon: '🔫', info: 'ℹ️' };
+
+const UPDATES = {
+  tracker: [
+    { version: 'v26-10-11', type: 'major', date: '2026-10-11', items: [
+      ['new',  '[Statistics] New Statistics page: players seen at level 100, all-time daily, weekly, ranked and clan records, most popular guns, and players online right now'],
+      ['tool', '[Community Vote] Results now show as a community tier list or a ranking, with your own picks marked'],
+    ]},
+    // { version: 'v26-10-04', type: 'minor', date: '2026-10-04', items: [
+    //   ['tool', '[Weapons] Weapon pages are now clickable with a details window'],
+    // ]},
+  ],
+  game: [
+    // Example (delete the // to use it):
+    // { version: 'Season 3', type: 'major', date: '2026-09-20', items: [
+    //   ['new',     '[Maps] Added the new map Skulltown'],
+    //   ['balance', '[Weapons] Sniper damage reduced'],
+    //   ['fix',     '[Game] Fixed players getting stuck on spawn'],
+    // ]},
+  ]
+};
+
+// ================= PAGE =================
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtDate = d => { const t = Date.parse(d + 'T00:00:00Z'); return isNaN(t) ? esc(d) : new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }); };
+document.getElementById('upDiscord').href = CONFIG.discordInvite;
+
+let tab = location.hash === '#game' ? 'game' : 'tracker';
+function render() {
+  document.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  const list = UPDATES[tab];
+  document.getElementById('upList').innerHTML = list.length ? list.map(u => `
+    <article class="up-card">
+      <div class="up-top">
+        <span class="up-badge ${esc(u.type)}">${esc(u.type.toUpperCase())}</span>
+        <span class="up-ver">${esc(u.version)}</span>
+        <span class="up-date">${fmtDate(u.date)}</span>
+      </div>
+      <ul class="up-list">${u.items.map(([k, t]) => `<li><span><span class="up-ic">${KIND[k] || KIND.info}</span> ${esc(t)}</span></li>`).join('')}</ul>
+    </article>`).join('') : '<p class="up-empty">No updates posted here yet.</p>';
+}
+document.querySelector('.up-tabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]'); if (!b) return;
+  tab = b.dataset.tab; history.replaceState(null, '', '#' + tab); render();
+});
+render();
+</script>
 </body>
 </html>
