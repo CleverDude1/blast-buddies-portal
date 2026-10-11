@@ -13,7 +13,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = n => Number(n).toLocaleString();
 const PH = "this.onerror=null;this.src='images/placeholder.png'";
-const icon = id => `<img src="images/icons/${id}.png" alt="" onerror="${PH}">`;   // reuses the sidebar icons; swap for your own stat icons
+const statIcon = id => `<img src="images/icons/${id}.png" alt="" onerror="${PH}">`;   // reuses the sidebar icons; swap for your own stat icons
 const colorOf = c => CLAN_COLORS[c] || '#ffffff';
 const tagHtml = (tag, color) => tag ? `<span class="st-tag" style="color:${colorOf(color)}">${esc(tag)}</span>` : '';
 
@@ -23,7 +23,7 @@ const detail = {};
 function card(key, o) {
   if (o.details) detail[key] = o.details;
   return `<div class="map-card st-card"${o.details ? ` data-d="${key}"` : ''}>
-    <div class="st-head"><span class="st-icon">${icon(o.icon)}</span><div><div class="st-title">${o.title}</div><div class="st-sub">${o.sub}</div></div></div>
+    <div class="st-head"><span class="st-icon">${statIcon(o.icon)}</span><div><div class="st-title">${o.title}</div><div class="st-sub">${o.sub}</div></div></div>
     ${o.value !== undefined ? `<div class="map-val">${o.value}</div>` : ''}
     ${(o.notes || []).map(n => `<div class="map-note">${n}</div>`).join('')}
     ${o.body || ''}
