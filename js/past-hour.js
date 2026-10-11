@@ -8,12 +8,14 @@
   const signed = n => (n > 0 ? '+' : n < 0 ? '-' : '') + fmt(Math.abs(n));
   const utc = iso => new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
   const todayStr = () => new Date().toISOString().slice(0, 10);
-  const getSpan = () => { try { return localStorage.getItem('hrSpan') === 'day' ? 'day' : 'hour'; } catch (e) { return 'hour'; } };
+  const SPANS = ['hour', 'day', 'week'];
+  const getSpan = () => { try { const s = localStorage.getItem('hrSpan'); return s === 'day' || s === 'week' ? s : 'hour'; } catch (e) { return 'hour'; } };
 
   const q = new URLSearchParams(location.search);
-  if (q.get('span') === 'day' || q.get('span') === 'hour') { try { localStorage.setItem('hrSpan', q.get('span')); } catch (e) {} }
+  if (SPANS.includes(q.get('span'))) { try { localStorage.setItem('hrSpan', q.get('span')); } catch (e) {} }
   let span = getSpan(), date = /^\d{4}-\d{2}-\d{2}$/.test(q.get('date') || '') ? q.get('date') : '', cur = q.get('board');
   if (!LABEL[cur]) cur = 'day';
+  const dateKey = () => (span !== 'hour' ? date : '');
   const cache = {};
   let data = null;
 
@@ -28,19 +30,28 @@
   function draw() {
     document.querySelectorAll('#phTabs button').forEach(b => b.classList.toggle('on', b.dataset.b === cur));
     document.querySelectorAll('#phSpan button').forEach(b => b.classList.toggle('on', b.dataset.span === span));
-    $('phDateWrap').style.display = span === 'day' ? '' : 'none';
+    $('phDateWrap').style.display = span !== 'hour' ? '' : 'none';
+    const lbl = $('phDateLbl'); if (lbl) lbl.textContent = span === 'week' ? 'Week ending' : 'Day';
     $('phDate').value = date || todayStr(); $('phDate').max = todayStr();
-    $('phTitle').textContent = span === 'hour' ? 'Past hour' : (date && date !== todayStr() ? `Day: ${date}` : 'Last day');
+    const past = date && date !== todayStr();
+    $('phTitle').textContent = span === 'hour' ? 'Past hour'
+      : span === 'week' ? (past ? `Week ending ${date}` : 'Last 7 days')
+      : (past ? `Day: ${date}` : 'Last day');
     const none = t => { $('phStats').innerHTML = ''; $('phPower').innerHTML = ''; $('phRows').innerHTML = msg(t); $('phChart').innerHTML = ''; $('phLegend').innerHTML = ''; $('phGraphNote').textContent = ''; };
     if (data === undefined) return none('Loading...');
     if (data === null) return none('Could not load the report.');
     const b = data.boards[cur], who = cur === 'clan' ? 'clans' : 'players';
-    if (!b || !b.ok) return none(span === 'day' ? 'No stored snapshots for this day yet.' : 'No hourly data for this board yet. It needs a stored snapshot from about an hour ago.');
+    if (!b || !b.ok) return none(span === 'day' ? 'No stored snapshots for this day yet.'
+      : span === 'week' ? 'No stored snapshots for this week yet.'
+      : 'No hourly data for this board yet. It needs a stored snapshot from about an hour ago.');
 
     $('phWhen').textContent = span === 'hour'
       ? `Live values compared with the snapshot from ${utc(b.at)} (${b.elapsedMin} min ago).`
-      : b.live ? `Every stored snapshot since 00:00 UTC (${b.snapshots} so far, first at ${utc(b.at)}) plus the live values.`
-               : `Every stored snapshot from 00:00 to 00:00 UTC on ${date} (${b.snapshots}).`;
+      : span === 'week'
+        ? (b.live ? `Stored snapshots over the last 7 days (${b.snapshots} used, first at ${utc(b.at)}) plus the live values.`
+                  : `Stored snapshots for the 7 days ending ${date} (${b.snapshots} used).`)
+        : (b.live ? `Every stored snapshot since 00:00 UTC (${b.snapshots} so far, first at ${utc(b.at)}) plus the live values.`
+                  : `Every stored snapshot from 00:00 to 00:00 UTC on ${date} (${b.snapshots}).`);
     $('phGainHead').textContent = b.unit.charAt(0).toUpperCase() + b.unit.slice(1) + ' gained';
     CLANPOWER.render($('phPower'), b.strongest, b.unit, window.CLAN_COLORS);
 
@@ -71,7 +82,9 @@
     $('phGraphTitle').textContent = `${cur === 'clan' ? 'Clans' : 'Players'} that changed (${S.length})`;
     $('phGraphNote').textContent = span === 'day' && cur === 'day'
       ? `Each line is a player's kills since 00:00 UTC, one point per stored snapshot. Hover a line to see who it is.`
-      : `Each line is the running total of ${b.unit} gained since the start of the period, one point per stored snapshot. Hover a line to see who it is.`;
+      : span === 'week'
+        ? `Each line is the running total of ${b.unit} gained over the last 7 days, one point per sampled snapshot. Hover a line to see who it is.`
+        : `Each line is the running total of ${b.unit} gained since the start of the period, one point per stored snapshot. Hover a line to see who it is.`;
     if (!S.length) { el.innerHTML = '<div class="chart-empty">No changes to plot for this period.</div>'; leg.innerHTML = ''; return; }
     const t0 = Date.parse(b.at), t1 = Math.max(Date.parse(b.to), t0 + 1);
     const vals = S.flatMap(s => s.pts.map(p => p[1])), yt = niceTicks(Math.min(0, ...vals), Math.max(...vals)), y0 = yt[0], y1 = yt[yt.length - 1];
@@ -82,7 +95,9 @@
     g += `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="#555f48"/>`;
     g += Array.from({ length: 6 }, (_, i) => { const t = t0 + (t1 - t0) * i / 5; return `<text x="${X(t)}" y="${H - 10}" text-anchor="middle">${xl(t)}</text>`; }).join('');
     g += S.map((s, i) => `<path data-i="${i}" d="${s.pts.map((p, j) => (j ? 'L' : 'M') + X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' ')}" fill="none" stroke="${color(i)}" stroke-width="1.8" stroke-linejoin="round" opacity=".9"/>`).join('');
-    g += S.map((s, i) => s.pts.map(p => `<circle data-i="${i}" cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="2.2" fill="${color(i)}"/>`).join('')).join('');
+    // a week has many points per line: skip the dots when there are lots (the hover still snaps to the nearest point)
+    const totalPts = S.reduce((n, s) => n + s.pts.length, 0);
+    if (totalPts < 1500) g += S.map((s, i) => s.pts.map(p => `<circle data-i="${i}" cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="2.2" fill="${color(i)}"/>`).join('')).join('');
     el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg><div class="ph-tip" style="display:none"></div>`;
     leg.innerHTML = S.map((s, i) => `<span data-i="${i}"><i class="dot" style="background:${color(i)}"></i>${esc(s.name)} <b>${short(s.pts[s.pts.length - 1][1])}</b></span>`).join('');
 
@@ -92,6 +107,7 @@
       svg.querySelectorAll('circle').forEach(c => c.classList.toggle('dim', i != null && +c.dataset.i !== i));
       leg.querySelectorAll('span').forEach(sp => sp.classList.toggle('on', i != null && +sp.dataset.i === i));
     };
+    const tfmt = t => span === 'week' ? new Date(t).toISOString().slice(5, 16).replace('T', ' ') + ' UTC' : new Date(t).toISOString().slice(11, 16) + ' UTC';
     svg.addEventListener('mousemove', e => {
       const rc = svg.getBoundingClientRect(), mx = (e.clientX - rc.left) * W / rc.width, my = (e.clientY - rc.top) * H / rc.height;
       let best = null, bd = 20 * 20;
@@ -99,7 +115,7 @@
       if (!best) { tip.style.display = 'none'; hl(null); return; }
       const er = el.getBoundingClientRect();
       hl(best[0]); tip.style.display = 'block'; tip.style.left = Math.min(e.clientX - er.left + 14, er.width - 190) + 'px'; tip.style.top = (e.clientY - er.top + 14) + 'px';
-      tip.innerHTML = `<b style="color:${color(best[0])}">${esc(S[best[0]].name)}</b>${S[best[0]].tag ? ` [${esc(S[best[0]].tag)}]` : ''}<br>${fmt(best[1][1])} ${esc(b.unit)} · ${new Date(best[1][0]).toISOString().slice(11, 16)} UTC`;
+      tip.innerHTML = `<b style="color:${color(best[0])}">${esc(S[best[0]].name)}</b>${S[best[0]].tag ? ` [${esc(S[best[0]].tag)}]` : ''}<br>${fmt(best[1][1])} ${esc(b.unit)} · ${tfmt(best[1][0])}`;
     });
     svg.addEventListener('mouseleave', () => { tip.style.display = 'none'; hl(null); });
     leg.addEventListener('mouseover', e => { const sp = e.target.closest('[data-i]'); hl(sp ? +sp.dataset.i : null); });
@@ -107,16 +123,16 @@
   }
 
   async function load() {
-    const sp = span, dt = span === 'day' ? date : '', key = `${sp}|${dt}`;
+    const sp = span, dt = dateKey(), key = `${sp}|${dt}`;
     if (cache[key] === undefined) {
       data = undefined; draw();
       try { const r = await fetch(`/api/hourly?mode=summary&span=${sp}${dt ? '&date=' + dt : ''}`); if (!r.ok) throw new Error('HTTP ' + r.status); cache[key] = await r.json(); }
       catch (e) { console.error(e); cache[key] = null; }
     }
-    if (sp !== span || dt !== (span === 'day' ? date : '')) return;
+    if (sp !== span || dt !== dateKey()) return;
     data = cache[key]; draw();
   }
-  const url = () => `?board=${cur}${span === 'day' && date ? '&date=' + date : ''}`;
+  const url = () => `?board=${cur}${span !== 'hour' && date ? '&date=' + date : ''}`;
   $('phTabs').addEventListener('click', e => { const t = e.target.closest('[data-b]'); if (t) { cur = t.dataset.b; history.replaceState(null, '', url()); if (data) draw(); } });
   $('phSpan').addEventListener('click', e => { const t = e.target.closest('[data-span]'); if (t && t.dataset.span !== span) { try { localStorage.setItem('hrSpan', t.dataset.span); } catch (x) {} window.dispatchEvent(new Event('hr-span')); } });
   $('phDate').addEventListener('change', e => { date = e.target.value && e.target.value !== todayStr() ? e.target.value : ''; history.replaceState(null, '', url()); load(); });
