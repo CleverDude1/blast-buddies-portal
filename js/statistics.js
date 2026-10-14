@@ -94,15 +94,29 @@ function onlineCard() {
         <div class="st-list">${[...r.list].sort((a, b) => b.players - a.players).map(x => `<div class="st-row" style="grid-template-columns:1fr auto"><span class="nm">${esc(x.map)} <span class="muted">· ${esc(x.mode)} ${esc(x.gameMode)}</span></span><span class="r">${x.players}/${x.maxPlayers}</span></div>`).join('') || '<p class="muted">No rooms.</p>'}</div>`).join('') });
 }
 
+// ---------- highest players online (all time) ----------
+function peakCard() {
+  const p = stats?.peak, base = { icon: 'player-updates', title: 'Highest players online', sub: 'All time · tracked by this site' };
+  if (!p) return card('peak', { ...base, value: '—', notes: [stats ? 'No peak recorded yet' : waiting()] });
+  const when = new Date(p.achieved_at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  return card('peak', { ...base, value: fmt(p.total),
+    notes: [`NA <b>${p.na_players ?? '?'}</b> · EU <b>${p.eu_players ?? '?'}</b> · AS <b>${p.as_players ?? '?'}</b>`, `<span class="st-ok">${when}</span>`],
+    details: () => `<h3>Highest players online</h3><div class="muted">The most players seen online at the same time, across all regions.</div>
+      <div class="dlg-grid"><div>Players<b>${fmt(p.total)}</b></div><div>Active rooms<b>${p.rooms ?? '?'}</b></div>
+        <div>North America<b>${p.na_players ?? '?'}</b></div><div>Europe<b>${p.eu_players ?? '?'}</b></div>
+        <div>Asia<b>${p.as_players ?? '?'}</b></div><div>When<b style="font-size:14px">${when}</b></div></div>
+      <div class="dlg-section">The peak is only recorded while the site is checking (someone has this page open or the collector runs), so a higher peak between checks can be missed.</div>` });
+}
+
 // ---------- page ----------
 function render() {
   $('stGrid').innerHTML = [
-    levelCard(), onlineCard(),
+    levelCard(), onlineCard(), peakCard(),
     recordCard('daily_kills', 'Highest daily kills', 'Top 3 · daily · all time', 'daily'),
     recordCard('weekly_kills', 'Highest weekly kills', 'Top 3 · weekly · all time', 'weekly'),
     recordCard('ranked_trophies', 'Highest ranked trophies', 'Top 3 · ranked · all time', 'season'),
-    recordCard('clan_kills', 'Highest clan kills', 'Top 3 · clans · all time', 'clans', true),
     gunCard('day', 'Daily'), gunCard('week', 'Weekly'), gunCard('ranked', 'Ranked'),
+    recordCard('clan_kills', 'Highest clan kills', 'Top 3 · clans · all time', 'clans', true),
   ].join('');
 }
 $('stGrid').addEventListener('click', e => {
@@ -130,7 +144,12 @@ async function loadRooms() {
   catch (e) { console.warn('rooms failed:', e); if (!rooms) rooms = false; }
   render();
 }
+async function loadPeak() {   // asks the server to re-check the online peak (it only counts when the live total beats it)
+  try { const r = await fetch(STATS_URL + '?mode=online'); if (!r.ok) return; const d = await r.json(); if (stats && d.peak) { stats.peak = d.peak; render(); } }
+  catch (e) { console.warn('peak failed:', e); }
+}
 render();
 loadStats();
 loadRooms();
 setInterval(loadRooms, ROOMS_EVERY);
+setInterval(loadPeak, 60000);
