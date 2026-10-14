@@ -4,7 +4,7 @@
 // /api/stats?mode=backfill&key=ADMIN_KEY[&after=ID]  -> one-off: rebuild records + level 100 from stored raw_snapshots
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, STATS_ADMIN_KEY (only for backfill)
 import { URLS, fetchLive } from './_lib/shared.js';
-import { collect, commit, loadStats, weaponCounts, backfill, roomTotals, updatePeak, loadPeak } from './_lib/records.js';
+import { collect, commit, loadStats, weaponCounts, backfill, roomTotals, updatePeak, loadPeak, hourAgo } from './_lib/records.js';
 
 export const config = { maxDuration: 60 };
 const BOARDS = ['day', 'week', 'ranked', 'clan'];
@@ -36,7 +36,14 @@ export default async function handler(req, res) {
     await Promise.all(BOARDS.map(async b => {
       try { live[b] = await fetchLive(URLS[b]); } catch (e) { console.error(`live ${b} failed:`, e.message); live[b] = null; }
     }));
-    try { await commit(collect(BOARDS.filter(b => live[b]).map(b => ({ board: b, payload: live[b], at: now }))), now); }
+    try {
+      const items = await Promise.all(BOARDS.filter(b => live[b]).map(async b => {
+        let prev = null;
+        try { prev = await hourAgo(URLS[b], now); } catch (e) { console.error(`hour-ago ${b} failed:`, e.message); }
+        return { board: b, payload: live[b], at: now, prevPayload: prev?.payload, prevAt: prev?.at };
+      }));
+      await commit(collect(items), now);
+    }
     catch (e) { console.error('record update failed:', e.message); }   // still show what is stored
     await checkPeak(req);
     const stats = await loadStats();
