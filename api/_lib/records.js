@@ -89,11 +89,39 @@ export const recordPayloads = (byBoard, at = Date.now()) =>
 
 export async function loadStats() {
   const keys = ['daily_kills', 'weekly_kills', 'ranked_trophies', 'clan_kills'];
-  const [players, ...tops] = await Promise.all([
+  const [players, peak, ...tops] = await Promise.all([
     sb('level100_players?select=player_id,name,clan_tag,clan_color,total_xp,first_seen_at&order=total_xp.desc&limit=1000'),
+    loadPeak().catch(() => null),   // null until the peak_online table exists
     ...keys.map(k => sb(`records?select=*&key=eq.${k}&order=value.desc&limit=${TOP}`)),
   ]);
-  return { records: Object.fromEntries(keys.map((k, i) => [k, tops[i]])), level100: { count: players.length, players } };
+  return { records: Object.fromEntries(keys.map((k, i) => [k, tops[i]])), level100: { count: players.length, players }, peak };
+}
+
+// ---------- highest players online (all time) ----------
+// payload = the /api/rooms response. Counts players per region; ok = how many regions answered.
+export function roomTotals(payload) {
+  const t = { na: 0, eu: 0, as: 0, total: 0, rooms: 0, ok: 0 };
+  for (const k of ['na', 'eu', 'as']) {
+    const r = payload?.regions?.[k];
+    if (!r?.success || !Array.isArray(r.data)) continue;
+    t.ok++; t.rooms += r.data.length;
+    t[k] = r.data.reduce((s, x) => s + (Number(x.players) || 0), 0);
+    t.total += t[k];
+  }
+  return t;
+}
+export async function loadPeak() {
+  const [row] = await sb('peak_online?select=*&id=eq.all');
+  return row || null;
+}
+// replaces the stored peak only when the current total beats it
+export async function updatePeak(t, now = Date.now()) {
+  if (!t || !t.ok || !(t.total > 0)) return null;
+  const cur = await loadPeak();
+  if (cur && Number(cur.total) >= t.total) return cur;
+  const row = { id: 'all', total: t.total, na_players: t.na, eu_players: t.eu, as_players: t.as, rooms: t.rooms, achieved_at: new Date(now).toISOString() };
+  await sb('peak_online?on_conflict=id', { method: 'POST', body: [row], prefer: 'resolution=merge-duplicates,return=minimal' });
+  return row;
 }
 
 // how many of the top N players use each weapon: { total, list: [{ id, count }] sorted most used first }
