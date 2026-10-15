@@ -11,6 +11,7 @@ const NAV = [
   ['weekly','Weekly Rankings','weekly-rankings.html'],
   ['season',`Ranked Season ${CONFIG.currentSeason}`,'ranked-season.html'],
   ['clans','Clan Rankings','clan-rankings.html'],
+  ['league','Clan League','league.html'],
   ['podium','Podium','podium.html'],
   ['compare','Compare','compare.html'],
   ['player-updates','Player Updates','player-updates.html'],
