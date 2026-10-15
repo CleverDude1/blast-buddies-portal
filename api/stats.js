@@ -1,7 +1,7 @@
 // /api/stats  -> everything the Statistics page needs in one call:
 //   level100 (players ever seen at level 100+), records (all-time highs), guns (top-50 weapon counts per board)
 // Every call also checks the live boards against the stored records and replaces any that were beaten.
-// /api/stats?mode=sample   -> called by the Supabase cron every 5 minutes (Bearer secret): stores one online-players sample + updates the all-time peak
+// /api/stats?mode=sample   -> called by the Supabase cron once an hour (:55) (Bearer secret): stores one online-players sample + updates the all-time peak
 // /api/stats?mode=backfill&key=ADMIN_KEY[&after=ID]  -> one-off: rebuild records + level 100 from stored raw_snapshots
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, STATS_ADMIN_KEY (only for backfill)
 import { URLS, fetchLive } from './_lib/shared.js';
