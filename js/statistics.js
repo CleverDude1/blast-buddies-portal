@@ -107,7 +107,7 @@ function peakCard() {
       <div class="dlg-grid"><div>Players<b>${fmt(p.total)}</b></div><div>Active rooms<b>${p.rooms ?? '?'}</b></div>
         <div>North America<b>${p.na_players ?? '?'}</b></div><div>Europe<b>${p.eu_players ?? '?'}</b></div>
         <div>Asia<b>${p.as_players ?? '?'}</b></div><div>When<b style="font-size:14px">${when}</b></div></div>
-      <div class="dlg-section">The peak is checked every 5 minutes, so a short spike between two checks can be missed.</div>` });
+      <div class="dlg-section">The peak is checked once an hour, so a spike between two checks can be missed.</div>` });
 }
 
 // ---------- medal ranks (players and clans) ----------
@@ -196,9 +196,9 @@ const niceMax = v => { const p = Math.pow(10, Math.floor(Math.log10(v))); for (c
 const hm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const SERIES = [['na', 'NA', '#5aa9ff'], ['eu', 'EU', '#6fdc7a'], ['as', 'AS', '#ff9a2e']];
 function onlineChartCard() {
-  const head = `<div class="st-head"><span class="st-icon">${statIcon('player-updates')}</span><div><div class="st-title">Players online · last 24 hours</div><div class="st-sub">All regions · sampled every 5 minutes · times in your time zone</div></div></div>`;
+  const head = `<div class="st-head"><span class="st-icon">${statIcon('player-updates')}</span><div><div class="st-title">Players online · last 24 hours</div><div class="st-sub">All regions · sampled once an hour · times in your time zone</div></div></div>`;
   const raw = stats?.online || [];
-  if (raw.length < 2) { chartData = null; return `<div class="map-card st-card st-wide">${head}<div class="map-note">${stats ? 'Collecting data. The graph fills in as samples arrive (every 5 minutes).' : waiting()}</div></div>`; }
+  if (raw.length < 2) { chartData = null; return `<div class="map-card st-card st-wide">${head}<div class="map-note">${stats ? 'Collecting data. The graph fills in as samples arrive (once an hour).' : waiting()}</div></div>`; }
   const pts = raw.map(x => ({ t: Date.parse(x.sampled_at), total: x.total, na: x.na_players ?? 0, eu: x.eu_players ?? 0, as: x.as_players ?? 0 }));
   const tEnd = Math.max(Date.now(), pts[pts.length - 1].t), tStart = tEnd - 24 * 36e5;
   const W = 900, H = 260, L = 46, R = 12, T = 14, B = 28, max = niceMax(Math.max(...pts.map(p => p.total), 1));
@@ -283,7 +283,7 @@ async function loadPodium() {
   catch (e) { console.warn('podium failed:', e); podiumErr = true; }
   render();
 }
-async function loadOnline() {   // refreshes the 24-hour graph and the all-time peak (the server fills them every 5 minutes)
+async function loadOnline() {   // refreshes the 24-hour graph and the all-time peak (the server fills them once an hour)
   try { const r = await fetch(STATS_URL + '?mode=online'); if (!r.ok) return; const d = await r.json(); if (stats) { stats.online = d.samples || []; if (d.peak) stats.peak = d.peak; render(); } }
   catch (e) { console.warn('online failed:', e); }
 }
