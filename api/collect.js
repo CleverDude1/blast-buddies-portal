@@ -1,5 +1,6 @@
 import { recordPlayerUpdates } from './_lib/player-updates.js';
 import { recordClanUpdates } from './_lib/clan-updates.js';
+import { collect as collectRecords, commit as commitRecords, hourAgo } from './_lib/records.js';
 import { createClient } from '@supabase/supabase-js';
 import { SOURCES } from './_sources/index.js';
 import {
@@ -122,7 +123,23 @@ export default async function handler(req, res) {
       tracked: CLAN_TRACKED, rows: [...clans.values()], runId: run.id, now,
     }));
   await step('clanUpdates', () => recordClanUpdates());
-    await step('playerUpdates', () => recordPlayerUpdates());
+  await step('playerUpdates', () => recordPlayerUpdates());
+
+  // Statistics page records (all-time highs, best KDR, biggest gain in 1 hour). Compares each board with the snapshot from ~1 hour ago.
+  await step('records', async () => {
+    const boardOf = { 'leaderboard-day': 'day', 'leaderboard-week': 'week', 'leaderboard-ranked': 'ranked', clan: 'clan' };
+    const nowMs = Date.parse(now), items = [];
+    for (let i = 0; i < SOURCES.length; i++) {
+      const board = boardOf[SOURCES[i].key];
+      if (!board || results[i].status !== 'fulfilled') continue;
+      let prev = null;
+      try { prev = await hourAgo(SOURCES[i].url, nowMs); } catch (e) { /* no earlier snapshot: the 1-hour gains are skipped for this board */ }
+      items.push({ board, payload: results[i].value.json, at: nowMs, prevPayload: prev?.payload, prevAt: prev?.at });
+    }
+    await commitRecords(collectRecords(items), nowMs);
+    return { boards: items.length };
+  });
+
   // 4. Close out the run
   const status = errors.length === 0 ? 'ok' : fetchedOk > 0 ? 'partial' : 'failed';
   await db.from('collection_runs')
