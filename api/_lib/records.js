@@ -135,6 +135,16 @@ export async function hourAgo(url, now = Date.now()) {
   return row ? { at: Date.parse(best.fetched_at), payload: row.payload } : null;
 }
 
+// ---------- players online samples (one row per cron run, see supabase-online.sql) ----------
+export async function addOnlineSample(t, now = Date.now()) {
+  await sb('online_samples?on_conflict=sampled_at', { method: 'POST', prefer: 'resolution=merge-duplicates,return=minimal',
+    body: [{ sampled_at: new Date(now).toISOString(), total: t.total, na_players: t.na, eu_players: t.eu, as_players: t.as, rooms: t.rooms, regions_ok: t.ok }] });
+}
+export function loadOnline(hours = 24) {
+  const since = new Date(Date.now() - hours * 36e5).toISOString();
+  return sb(`online_samples?select=sampled_at,total,na_players,eu_players,as_players&sampled_at=gte.${enc(since)}&order=sampled_at.asc&limit=600`);
+}
+
 // ---------- highest players online (all time) ----------
 // payload = the /api/rooms response. Counts players per region; ok = how many regions answered.
 export function roomTotals(payload) {
