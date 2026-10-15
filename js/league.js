@@ -1,5 +1,5 @@
 // Clan league page. Needs js/layout.js and js/clan-colors.js (CLAN_COLORS).
-const LEAGUE_API = '/api/league';
+const LEAGUE_API = '/api/stats?mode=league';   // served by api/stats.js (league code lives in api/_lib/league.js)
 
 // Same tables as the medal ranks on the Statistics page (must match supabase/league.sql: medal points by place).
 const MEDALS = [['Gold', 1000, '#ffd84d'], ['Silver', 950, '#cfd6dd'], ['Bronze', 850, '#cd7f32'], ['Glass', 700, '#8ff7ff'], ['Copper', 500, '#d2763a'],
