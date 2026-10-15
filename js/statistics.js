@@ -107,7 +107,7 @@ function peakCard() {
       <div class="dlg-grid"><div>Players<b>${fmt(p.total)}</b></div><div>Active rooms<b>${p.rooms ?? '?'}</b></div>
         <div>North America<b>${p.na_players ?? '?'}</b></div><div>Europe<b>${p.eu_players ?? '?'}</b></div>
         <div>Asia<b>${p.as_players ?? '?'}</b></div><div>When<b style="font-size:14px">${when}</b></div></div>
-      <div class="dlg-section">The peak is only recorded while the site is checking (someone has this page open or the collector runs), so a higher peak between checks can be missed.</div>` });
+      <div class="dlg-section">The peak is checked every 5 minutes, so a short spike between two checks can be missed.</div>` });
 }
 
 // ---------- medal ranks (players and clans) ----------
@@ -190,10 +190,55 @@ function medalCard(key, title, sub, iconId, isClan) {
         <span class="r"><b style="color:var(--text);font-size:17px">${fmt(r.points)}</b> pts</span></div>`).join('')}</div>` });
 }
 
+// ---------- players online, last 24 hours ----------
+let chartData = null;
+const niceMax = v => { const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 5, 10]) if (v <= m * p) return m * p; return 10 * p; };
+const hm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const SERIES = [['na', 'NA', '#5aa9ff'], ['eu', 'EU', '#6fdc7a'], ['as', 'AS', '#ff9a2e']];
+function onlineChartCard() {
+  const head = `<div class="st-head"><span class="st-icon">${statIcon('player-updates')}</span><div><div class="st-title">Players online · last 24 hours</div><div class="st-sub">All regions · sampled every 5 minutes · times in your time zone</div></div></div>`;
+  const raw = stats?.online || [];
+  if (raw.length < 2) { chartData = null; return `<div class="map-card st-card st-wide">${head}<div class="map-note">${stats ? 'Collecting data. The graph fills in as samples arrive (every 5 minutes).' : waiting()}</div></div>`; }
+  const pts = raw.map(x => ({ t: Date.parse(x.sampled_at), total: x.total, na: x.na_players ?? 0, eu: x.eu_players ?? 0, as: x.as_players ?? 0 }));
+  const tEnd = Math.max(Date.now(), pts[pts.length - 1].t), tStart = tEnd - 24 * 36e5;
+  const W = 900, H = 260, L = 46, R = 12, T = 14, B = 28, max = niceMax(Math.max(...pts.map(p => p.total), 1));
+  const x = t => L + (t - tStart) / (tEnd - tStart) * (W - L - R), y = v => T + (1 - v / max) * (H - T - B);
+  const line = k => pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p[k]).toFixed(1)}`).join(' ');
+  const area = `${line('total')} L${x(pts[pts.length - 1].t).toFixed(1)},${y(0)} L${x(pts[0].t).toFixed(1)},${y(0)} Z`;
+  const grid = [0, 1, 2, 3, 4].map(i => { const v = max * i / 4; return `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#2a3322"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${fmt(Math.round(v))}</text>`; }).join('');
+  const ticks = [0, 4, 8, 12, 16, 20, 24].map(h => { const t = tEnd - h * 36e5; return `<text x="${x(t)}" y="${H - 8}" text-anchor="${h === 24 ? 'start' : h === 0 ? 'end' : 'middle'}">${h === 0 ? 'now' : hm(t)}</text>`; }).join('');
+  chartData = { pts, tStart, tEnd, W, L, R, x };
+  const peak = pts.reduce((a, b) => b.total > a.total ? b : a), avg = Math.round(pts.reduce((s, p) => s + p.total, 0) / pts.length), last = pts[pts.length - 1];
+  const all = stats?.peak;
+  return `<div class="map-card st-card st-wide">${head}
+    <div class="st-oh"><div><b>${fmt(last.total)}</b><span>Latest sample</span></div><div><b>${fmt(peak.total)}</b><span>Peak (24h) · ${hm(peak.t)}</span></div>
+      <div><b>${fmt(avg)}</b><span>Average (24h)</span></div>${all ? `<div><b>${fmt(all.total)}</b><span>All-time peak</span></div>` : ''}</div>
+    <div class="st-chart"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <defs><linearGradient id="oa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2b84b" stop-opacity=".35"/><stop offset="1" stop-color="#f2b84b" stop-opacity="0"/></linearGradient></defs>
+      ${grid}${ticks}<path d="${area}" fill="url(#oa)"/>
+      ${SERIES.map(([k, , c]) => `<path d="${line(k)}" fill="none" stroke="${c}" stroke-width="1.4" opacity=".8"/>`).join('')}
+      <path d="${line('total')}" fill="none" stroke="#f2b84b" stroke-width="2.4"/>
+      <line id="stVline" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="#cfd3c4" stroke-dasharray="3 3" style="display:none"/></svg>
+      <div class="st-tip" id="stTip" style="display:none"></div></div>
+    <div class="st-legend"><span><i style="background:#f2b84b"></i>Total</span>${SERIES.map(([, n, c]) => `<span><i style="background:${c}"></i>${n}</span>`).join('')}</div></div>`;
+}
+$('stGrid').addEventListener('mousemove', e => {
+  const c = e.target.closest('.st-chart'); if (!c || !chartData) return;
+  const { pts, tStart, tEnd, W, L, R, x } = chartData, r = c.querySelector('svg').getBoundingClientRect();
+  const t = tStart + ((e.clientX - r.left) / r.width * W - L) / (W - L - R) * (tEnd - tStart);
+  const p = pts.reduce((a, b) => Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a), px = x(p.t) / W;
+  const v = $('stVline'), tip = $('stTip');
+  v.setAttribute('x1', x(p.t)); v.setAttribute('x2', x(p.t)); v.style.display = '';
+  tip.innerHTML = `<b>${hm(p.t)}</b> · ${fmt(p.total)} online<br>${SERIES.map(([k, n]) => `${n} ${p[k]}`).join(' · ')}`;
+  tip.style.display = ''; tip.style.left = `${px * 100}%`; tip.style.transform = px > .7 ? 'translateX(-105%)' : 'translateX(8px)';
+});
+$('stGrid').addEventListener('mouseout', e => { if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest('.st-chart')) { const v = $('stVline'), tip = $('stTip'); if (v) v.style.display = 'none'; if (tip) tip.style.display = 'none'; } });
+
 // ---------- page ----------
 function render() {
   $('stGrid').innerHTML = [
     levelCard(), onlineCard(), peakCard(),
+    onlineChartCard(),
     recordCard('daily_kills', 'Highest daily kills', 'Top 3 · daily · all time', 'daily'),
     recordCard('weekly_kills', 'Highest weekly kills', 'Top 3 · weekly · all time', 'weekly'),
     recordCard('ranked_trophies', 'Highest ranked trophies', 'Top 3 · ranked · all time', 'season'),
@@ -238,13 +283,13 @@ async function loadPodium() {
   catch (e) { console.warn('podium failed:', e); podiumErr = true; }
   render();
 }
-async function loadPeak() {   // asks the server to re-check the online peak (it only counts when the live total beats it)
-  try { const r = await fetch(STATS_URL + '?mode=online'); if (!r.ok) return; const d = await r.json(); if (stats && d.peak) { stats.peak = d.peak; render(); } }
-  catch (e) { console.warn('peak failed:', e); }
+async function loadOnline() {   // refreshes the 24-hour graph and the all-time peak (the server fills them every 5 minutes)
+  try { const r = await fetch(STATS_URL + '?mode=online'); if (!r.ok) return; const d = await r.json(); if (stats) { stats.online = d.samples || []; if (d.peak) stats.peak = d.peak; render(); } }
+  catch (e) { console.warn('online failed:', e); }
 }
 render();
 loadStats();
 loadRooms();
 loadPodium();
 setInterval(loadRooms, ROOMS_EVERY);
-setInterval(loadPeak, 60000);
+setInterval(loadOnline, 300000);
