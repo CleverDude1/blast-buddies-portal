@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clan League – Blast Buddies Tracker</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+.lg-bar{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin:8px 0 18px}
+.lg-cd{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums}
+.lg-area{margin-bottom:22px}
+.lg-area h2{margin:0 0 8px;font-size:18px}.lg-area h2 small{color:#a9b79c;font-weight:400;margin-left:8px;font-size:13px}
+.lg-row{display:grid;grid-template-columns:minmax(150px,1.1fr) 1.4fr 1fr 150px;gap:10px;align-items:center;padding:10px 14px;margin-bottom:6px;border-radius:12px;background:rgba(20,34,12,.6);border:1px solid rgba(255,255,255,.06)}
+.lg-title{font-weight:800}.lg-title small{display:block;font-weight:400;font-size:11px;color:#a9b79c}
+.lg-gain b{font-size:17px}.lg-gain small{color:#a9b79c;margin-left:4px}
+.lg-medal{justify-self:end;font-weight:700;display:flex;gap:6px;align-items:center}
+.lg-medal i{width:12px;height:12px;border-radius:50%;background:var(--c)}.lg-medal small{color:#a9b79c;font-weight:400}
+.lg-up{color:#6fdc7a}.lg-warn{padding:10px 14px;border-radius:12px;background:rgba(255,120,80,.15);margin-bottom:14px}
+@media(max-width:700px){.lg-row{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body data-page="league">
+<template id="page-content">
+  <h1 class="page-title">Clan League</h1>
+  <p class="muted">Clans are placed in areas of 10 by their season title. Whoever gains the most kills during the day wins the medals shown on the right. Medals add points, points raise your title, and a higher title means a tougher area tomorrow.</p>
+  <div class="lg-bar">
+    <div><div class="muted">Day ends (00:00 UTC) in</div><div class="lg-cd" id="lgCd">--:--:--</div></div>
+    <div class="muted" id="lgInfo">Loading...</div>
+  </div>
+  <div id="lgAreas"></div>
+</template>
+<script src="js/layout.js"></script>
+<script src="js/clan-colors.js"></script>
+<script src="js/league.js"></script>
+</body>
+</html>
