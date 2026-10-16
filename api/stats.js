@@ -1,11 +1,13 @@
 // /api/stats  -> everything the Statistics page needs in one call:
 //   level100 (players ever seen at level 100+), records (all-time highs), guns (top-50 weapon counts per board)
 // Every call also checks the live boards against the stored records and replaces any that were beaten.
-// /api/stats?mode=sample   -> called by the Supabase cron once an hour (:55) (Bearer secret): stores one online-players sample + updates the all-time peak
+// /api/stats?mode=sample   -> called by the Supabase cron once an hour (:55) (Bearer secret): runs the clan league tick, stores one online-players sample + updates the all-time peak
+// /api/stats?mode=league   -> the open clan league day + roster (league.html)
 // /api/stats?mode=backfill&key=ADMIN_KEY[&after=ID]  -> one-off: rebuild records + level 100 from stored raw_snapshots
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, STATS_ADMIN_KEY (only for backfill)
 import { URLS, fetchLive } from './_lib/shared.js';
 import { collect, commit, loadStats, weaponCounts, backfill, loadPeak, loadOnline, loadSamples, loadPlayers, backfillPlayers, hourAgo, roomTotals, addOnlineSample, updatePeak } from './_lib/records.js';
+import { leagueTick, loadLeague } from './_lib/league.js';
 
 export const config = { maxDuration: 60 };
 const BOARDS = ['day', 'week', 'ranked', 'clan'];
@@ -18,18 +20,24 @@ export default async function handler(req, res) {
       if (!secret) return res.status(500).json({ error: 'YOUR_ACTUAL_CRON_SECRET is not set' });
       if (req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: 'unauthorized' });
       res.setHeader('Cache-Control', 'no-store');
+      const at = Date.now();
+      let league = null;                            // clan league: runs first so a rooms problem never skips it
+      try { league = await leagueTick(await fetchLive(URLS.clan), at); } catch (e) { console.error('league tick failed:', e.message); league = 'error: ' + e.message; }
       const base = process.env.API_BASE_URL || 'https://blast-buddies-portal.vercel.app';
       const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 20000);
       try {
         const r = await fetch(`${base}/api/rooms`, { signal: ctrl.signal, headers: { 'user-agent': 'blast-buddies-collector', 'cache-control': 'no-cache' } });
         if (!r.ok) throw new Error('rooms HTTP ' + r.status);
         const tot = roomTotals(await r.json());
-        if (tot.ok < 3) return res.status(502).json({ error: `only ${tot.ok} of 3 regions answered` });   // a missing region would make the total look too low
-        const at = Date.now();
+        if (tot.ok < 3) return res.status(502).json({ error: `only ${tot.ok} of 3 regions answered`, league });   // a missing region would make the total look too low
         await addOnlineSample(tot, at);
         await updatePeak(tot, at);
-        return res.status(200).json({ ok: true, total: tot.total, na: tot.na, eu: tot.eu, as: tot.as, rooms: tot.rooms });
+        return res.status(200).json({ ok: true, total: tot.total, na: tot.na, eu: tot.eu, as: tot.as, rooms: tot.rooms, league });
       } finally { clearTimeout(timer); }
+    }
+    if (req.query.mode === 'league') {            // clan league page
+      res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+      return res.status(200).json(await loadLeague());
     }
     if (req.query.mode === 'backfill-players') {   // one-off: fill/repair the permanent players table from stored snapshots
       if (!process.env.STATS_ADMIN_KEY || req.query.key !== process.env.STATS_ADMIN_KEY)
