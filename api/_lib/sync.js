@@ -67,12 +67,22 @@ function leftovers(raw, ...maps) {
   return Object.fromEntries(Object.entries(raw).filter(([k]) => !known.has(k)));
 }
 
-// Accepts [..], { clanId... }, or { anything: [..] }
+// Finds the list of players/clans anywhere in the response.
+// Handles [..], { clanId... }, { anything: [..] } and nested shapes like { data: { top: [..] } }.
 export function extractList(json) {
+  const isRows = (v) => Array.isArray(v) && v.length && v[0] && typeof v[0] === 'object' && (v[0].playerId || v[0].clanId);
+  const find = (v, depth) => {
+    if (isRows(v)) return v;
+    if (!v || typeof v !== 'object' || Array.isArray(v) || depth > 4) return null;
+    for (const x of Object.values(v)) { const f = find(x, depth + 1); if (f) return f; }
+    return null;
+  };
   if (Array.isArray(json)) return json;
   if (json && typeof json === 'object') {
     if (json.clanId || json.playerId) return [json];
-    for (const v of Object.values(json)) if (Array.isArray(v)) return v;
+    const rows = find(json, 0);
+    if (rows) return rows;
+    for (const v of Object.values(json)) if (Array.isArray(v)) return v;   // old behaviour: first array at the top level
   }
   return [];
 }
