@@ -18,6 +18,7 @@ const NAV = [
   ['clan-updates','Clan Updates','clan-updates.html'],
   ['statistics','Statistics','statistics.html'],
   ['activity','Player Activity','player-activity.html'],
+  ['player-database','Player Database','players.html'],,
   ['maps','Maps','maps.html'],
   ['weapons','Weapons','weapons.html'],
   ['abilities','Abilities','abilities.html'],
