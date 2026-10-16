@@ -158,6 +158,53 @@ export async function loadSamples(days = 30) {
   return all;
 }
 
+// Look up players by id in the permanent `players` table that collect.js keeps up to date (id -> latest name, clan, ...)
+export async function loadPlayers(ids) {
+  const clean = [...new Set(ids)].filter(i => /^[\w-]{3,40}$/.test(i)).slice(0, 100);
+  if (!clean.length) return {};
+  const rows = await sb(`players?select=*&player_id=in.(${clean.map(i => enc('"' + i + '"')).join(',')})`);
+  return Object.fromEntries(rows.map(r => [r.player_id, r]));
+}
+
+// Fill the permanent `players` table from the snapshots you stored (use once to repair/seed it).
+// Walks raw_snapshots in id order; the latest values win, first_seen_at keeps the earliest sighting, newer live data is never overwritten.
+const PLAYER_MAP = { playerId: 'player_id', name: 'name', totalXp: 'total_xp', characterSkinId: 'character_skin_id', topWeaponId: 'top_weapon_id', topWeaponSkinId: 'top_weapon_skin_id', clanTag: 'clan_tag', clanColor: 'clan_color' };
+export async function backfillPlayers(after = 0, budgetMs = 40000) {
+  const boardOf = Object.fromEntries(Object.entries(URLS).map(([b, u]) => [u, b]));
+  const t0 = Date.now(), acc = new Map();
+  let cursor = after, done = false, seen = 0;
+  while (Date.now() - t0 < budgetMs) {
+    const rows = await sb(`raw_snapshots?select=id,url,fetched_at,payload&id=gt.${cursor}&order=id.asc&limit=20`);
+    if (!rows.length) { done = true; break; }
+    for (const r of rows) {
+      cursor = r.id; seen++;
+      const b = boardOf[r.url]; if (b !== 'day' && b !== 'week' && b !== 'ranked') continue;
+      for (const raw of extractList(r.payload, 'playerId') || []) {
+        if (!raw?.playerId) continue;
+        const cur = acc.get(raw.playerId) || { first_seen_at: r.fetched_at };
+        for (const [k, col] of Object.entries(PLAYER_MAP)) if (raw[k] !== undefined) cur[col] = raw[k];
+        cur.last_seen_at = r.fetched_at; acc.set(raw.playerId, cur);
+      }
+    }
+  }
+  const ids = [...acc.keys()]; let written = 0;
+  for (let i = 0; i < ids.length; i += 100) {
+    const part = ids.slice(i, i + 100);
+    const have = await sb(`players?select=player_id,first_seen_at,last_seen_at&player_id=in.(${part.map(x => enc('"' + x + '"')).join(',')})`);
+    const ex = new Map(have.map(r => [r.player_id, r])), rows = [];
+    for (const id of part) {
+      const o = acc.get(id), e = ex.get(id);
+      if (o.name == null) continue;
+      if (e && Date.parse(e.last_seen_at) > Date.parse(o.last_seen_at)) continue;   // the table already has newer data
+      rows.push({ player_id: id, name: o.name, total_xp: o.total_xp ?? null, character_skin_id: o.character_skin_id ?? null, top_weapon_id: o.top_weapon_id ?? null,
+        top_weapon_skin_id: o.top_weapon_skin_id ?? null, clan_tag: o.clan_tag ?? null, clan_color: o.clan_color ?? null, extra: {},
+        first_seen_at: e && Date.parse(e.first_seen_at) < Date.parse(o.first_seen_at) ? e.first_seen_at : o.first_seen_at, last_seen_at: o.last_seen_at, last_changed_at: o.last_seen_at });
+    }
+    if (rows.length) { await sb('players?on_conflict=player_id', { method: 'POST', body: rows, prefer: 'resolution=merge-duplicates,return=minimal' }); written += rows.length; }
+  }
+  return { done, next: cursor, snapshotsScanned: seen, playersFound: acc.size, written };
+}
+
 // ---------- highest players online (all time) ----------
 // payload = the /api/rooms response. Counts players per region; ok = how many regions answered.
 export function roomTotals(payload) {
