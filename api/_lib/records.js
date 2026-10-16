@@ -145,6 +145,19 @@ export function loadOnline(hours = 24) {
   return sb(`online_samples?select=sampled_at,total,na_players,eu_players,as_players&sampled_at=gte.${enc(since)}&order=sampled_at.asc&limit=600`);
 }
 
+// all samples of the last `days` days, oldest first (Supabase returns at most 1000 rows per request, so this pages)
+export async function loadSamples(days = 30) {
+  let since = new Date(Date.now() - days * 864e5).toISOString();
+  const all = [];
+  for (let i = 0; i < 6; i++) {
+    const rows = await sb(`online_samples?select=sampled_at,total,na_players,eu_players,as_players,rooms&sampled_at=gt.${enc(since)}&order=sampled_at.asc&limit=1000`);
+    all.push(...rows);
+    if (rows.length < 1000) break;
+    since = rows[rows.length - 1].sampled_at;
+  }
+  return all;
+}
+
 // ---------- highest players online (all time) ----------
 // payload = the /api/rooms response. Counts players per region; ok = how many regions answered.
 export function roomTotals(payload) {
