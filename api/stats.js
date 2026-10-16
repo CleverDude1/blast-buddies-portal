@@ -5,7 +5,7 @@
 // /api/stats?mode=backfill&key=ADMIN_KEY[&after=ID]  -> one-off: rebuild records + level 100 from stored raw_snapshots
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, STATS_ADMIN_KEY (only for backfill)
 import { URLS, fetchLive } from './_lib/shared.js';
-import { collect, commit, loadStats, weaponCounts, backfill, loadPeak, loadOnline, hourAgo, roomTotals, addOnlineSample, updatePeak } from './_lib/records.js';
+import { collect, commit, loadStats, weaponCounts, backfill, loadPeak, loadOnline, loadSamples, hourAgo, roomTotals, addOnlineSample, updatePeak } from './_lib/records.js';
 
 export const config = { maxDuration: 60 };
 const BOARDS = ['day', 'week', 'ranked', 'clan'];
@@ -36,6 +36,12 @@ export default async function handler(req, res) {
         return res.status(401).json({ error: 'Set STATS_ADMIN_KEY in Vercel and pass it as ?key=' });
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(await backfill(Number(req.query.after) || 0));
+    }
+    if (req.query.mode === 'activity') {          // Player Activity page: hourly online samples for the last N days
+      const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
+      res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
+      const [samples, peak] = await Promise.all([loadSamples(days), loadPeak().catch(() => null)]);
+      return res.status(200).json({ days, samples, peak });
     }
     if (req.query.mode === 'online') {          // light call: the 24-hour online samples + all-time peak (both filled by api/online.js)
       res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
