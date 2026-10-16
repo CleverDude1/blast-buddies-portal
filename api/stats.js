@@ -5,7 +5,7 @@
 // /api/stats?mode=backfill&key=ADMIN_KEY[&after=ID]  -> one-off: rebuild records + level 100 from stored raw_snapshots
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, STATS_ADMIN_KEY (only for backfill)
 import { URLS, fetchLive } from './_lib/shared.js';
-import { collect, commit, loadStats, weaponCounts, backfill, loadPeak, loadOnline, loadSamples, hourAgo, roomTotals, addOnlineSample, updatePeak } from './_lib/records.js';
+import { collect, commit, loadStats, weaponCounts, backfill, loadPeak, loadOnline, loadSamples, loadPlayers, backfillPlayers, hourAgo, roomTotals, addOnlineSample, updatePeak } from './_lib/records.js';
 
 export const config = { maxDuration: 60 };
 const BOARDS = ['day', 'week', 'ranked', 'clan'];
@@ -31,11 +31,22 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, total: tot.total, na: tot.na, eu: tot.eu, as: tot.as, rooms: tot.rooms });
       } finally { clearTimeout(timer); }
     }
+    if (req.query.mode === 'backfill-players') {   // one-off: fill/repair the permanent players table from stored snapshots
+      if (!process.env.STATS_ADMIN_KEY || req.query.key !== process.env.STATS_ADMIN_KEY)
+        return res.status(401).json({ error: 'Set STATS_ADMIN_KEY in Vercel and pass it as ?key=' });
+      res.setHeader('Cache-Control', 'no-store');
+      return res.status(200).json(await backfillPlayers(Number(req.query.after) || 0));
+    }
     if (req.query.mode === 'backfill') {
       if (!process.env.STATS_ADMIN_KEY || req.query.key !== process.env.STATS_ADMIN_KEY)
         return res.status(401).json({ error: 'Set STATS_ADMIN_KEY in Vercel and pass it as ?key=' });
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(await backfill(Number(req.query.after) || 0));
+    }
+    if (req.query.mode === 'players') {           // id -> name lookup: /api/stats?mode=players&ids=id1,id2,...
+      const ids = String(req.query.ids || '').split(',').map(x => x.trim()).filter(Boolean);
+      res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
+      return res.status(200).json({ players: await loadPlayers(ids) });
     }
     if (req.query.mode === 'activity') {          // Player Activity page: hourly online samples for the last N days
       const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
