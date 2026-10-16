@@ -1,6 +1,6 @@
 // /api/league -> the open league day + roster (what league.html shows).
 // Env vars: SUPABASE_URL, SUPABASE_SECRET_KEY
-import { extractList } from './_lib/shared.js';
+import { extractList } from './shared.js';
 
 const base = () => (process.env.SUPABASE_URL || '').replace(/\/+$/, '') + '/rest/v1/';
 const headers = () => ({ apikey: process.env.SUPABASE_SECRET_KEY, Authorization: 'Bearer ' + process.env.SUPABASE_SECRET_KEY, 'Content-Type': 'application/json' });
