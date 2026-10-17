@@ -5,6 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Weapons – Blast Buddies Tracker</title>
 <link rel="stylesheet" href="css/style.css">
+<style>
+/* tier letter (community vote) and "most popular" sign on each weapon */
+.weapon-tile{position:relative}
+.wt-b{position:absolute;top:6px;font-style:normal;font-weight:800;line-height:1}
+.wt-tier{left:6px;min-width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:7px;font-size:13px;color:#10150c;background:#3a4630}
+.wt-tier.t-S{background:#ff7b7b}.wt-tier.t-A{background:#ffb35c}.wt-tier.t-B{background:#ffe066}.wt-tier.t-C{background:#a3e36f}.wt-tier.t-D{background:#6fc8ff}
+.wt-pop{right:6px;font-size:9px;padding:3px 7px;border-radius:999px;background:var(--gold);color:#10150c;letter-spacing:.02em;white-space:nowrap}
+#wdMeta{margin:6px 0 10px;font-size:14px;color:var(--muted);line-height:1.6}
+#wdMeta b{color:var(--text,#fff)}
+</style>
 </head>
 <body data-page="weapons">
 
@@ -16,22 +26,30 @@
     <img class="wdlg-img" id="wdImg" alt="">
     <h3 id="wdName"></h3>
     <div class="map-sub" id="wdCat"></div>
+    <div id="wdMeta"></div>
     <div class="dlg-section" id="wdInfo">More information coming soon.</div>
   </dialog>
 </template>
 
 <script src="js/layout.js"></script>
+<script src="js/weapon-names.js"></script>
 <script>
 // Names must match the image file names in images/weapons (e.g. images/weapons/Assault.png)
 const IMG_EXT = 'png';
 const WEAPONS = [
   ['Primary',   ['Assault','Bow','Burst','Lmg','MAC-10','Shotgun','Sniper','Thompson','UMP-45']],
   ['Secondary', ['Energy','Flare','Pistol','RayGun','Revolver','Snare','Knife']],
-  ['Grenades',  ['BlackHole','Flashbang','Inferno','Shockwave','Smoke','Storm','Updraft','Warp']]
+  ['Grenades',  ['BlackHole','Flashbang','Frag','Inferno','Shockwave','Smoke','Storm','Updraft','Warp']]
 ];
 
 // Fill in details later, e.g.  Assault: '<p>Damage: ...</p>'
 const INFO = {};
+
+const API_VOTE = '/api/hourly?mode=vote';          // community tier list results
+const API_POP = '/api/stats?mode=weapons';         // main weapon of the top-50 players (daily, weekly, ranked)
+const CAT_KEY = { Primary: 'primary', Secondary: 'secondary', Grenades: 'grenades' };
+const WEAPON_NAMES = window.BB_WEAPONS || {};
+let tiers = {}, pop = null;                        // tiers['Primary/Assault'] = { tier, avg };  pop = { counts, total, top }
 
 const wImg = n => `images/weapons/${n}.${IMG_EXT}`;
 const fallback = `this.onerror=null;this.src='images/placeholder.png'`;
@@ -48,6 +66,39 @@ document.getElementById('weaponSections').innerHTML = WEAPONS.map(([cat, list]) 
     </div>
   </section>`).join('');
 
+// ---------- tier letters + most popular sign ----------
+function tierMap(d) {                              // same rule as the Community Vote page: average score -> tier letter
+  const T = d.tiers || [], out = {};
+  if (!T.length) return out;
+  for (const [cat, key] of Object.entries(CAT_KEY))
+    for (const r of d.results?.[key] || [])
+      if (r.avgScore > 0) out[cat + '/' + r.item] = { tier: T[Math.min(T.length - 1, Math.max(0, Math.round(T.length - r.avgScore)))], avg: r.avgScore };
+  return out;
+}
+function popMap(g) {                               // adds up the top-50 boards; the weapon used by the most players is "most popular"
+  const counts = {}; let total = 0;
+  for (const b of ['day', 'week', 'ranked']) {
+    const x = g?.[b]; if (!x) continue;
+    total += x.total || 0;
+    for (const { id, count } of x.list || []) { const n = WEAPON_NAMES[id]; if (n) counts[n] = (counts[n] || 0) + count; }
+  }
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  return { counts, total, top: top ? top[0] : null };
+}
+function badges() {
+  document.querySelectorAll('.weapon-tile').forEach(t => {
+    t.querySelectorAll('.wt-b').forEach(x => x.remove());
+    const n = t.dataset.name, tr = tiers[t.dataset.cat + '/' + n];
+    let h = '';
+    if (tr) h += `<b class="wt-b wt-tier t-${tr.tier}" title="Community tier ${tr.tier} (average ${tr.avg}/5)">${tr.tier}</b>`;
+    if (pop && pop.top === n) h += '<em class="wt-b wt-pop" title="Most used main weapon among the top players">Most popular</em>';
+    if (h) t.insertAdjacentHTML('afterbegin', h);
+  });
+}
+fetch(API_VOTE).then(r => r.json()).then(d => { if (d.results) { tiers = tierMap(d); badges(); } }).catch(() => {});
+fetch(API_POP).then(r => r.json()).then(d => { if (d.guns) { pop = popMap(d.guns); badges(); } }).catch(() => {});
+
+// ---------- details popup ----------
 const dlg = document.getElementById('weaponDlg');
 document.querySelectorAll('.weapon-tile').forEach(t => t.onclick = () => {
   const n = t.dataset.name;
@@ -57,6 +108,12 @@ document.querySelectorAll('.weapon-tile').forEach(t => t.onclick = () => {
   img.alt = n;
   document.getElementById('wdName').textContent = n;
   document.getElementById('wdCat').textContent = t.dataset.cat;
+  const tr = tiers[t.dataset.cat + '/' + n], c = pop && pop.counts[n];
+  document.getElementById('wdMeta').innerHTML = [
+    tr ? `Community tier <b>${tr.tier}</b> (average ${tr.avg}/5)` : '',
+    pop && pop.top === n ? '<b>Most popular</b> weapon among top players' : '',
+    c ? `Main weapon of ${c} of ${pop.total} players on the top-50 boards` : ''
+  ].filter(Boolean).join('<br>');
   document.getElementById('wdInfo').innerHTML = INFO[n] || 'More information coming soon.';
   dlg.showModal();
 });
