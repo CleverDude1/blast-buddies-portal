@@ -3,6 +3,7 @@ const CONFIG = {
   siteName: 'Blast Buddies Tracker',
   currentSeason: 3,                                // change this number each season
   discordInvite: 'https://discord.gg/7QWQKTzUDH', // put your invite link here
+  gameUrl: 'https://poki.com/en/g/blast-buddies', // the logo links here
   languages: [['en','English'],['es','Español'],['fr','Français'],['de','Deutsch'],['pt','Português']]
 };
 const NAV = [
@@ -18,11 +19,11 @@ const NAV = [
   ['clan-updates','Clan Updates','clan-updates.html'],
   ['statistics','Statistics','statistics.html'],
   ['activity','Player Activity','player-activity.html'],
-  ['player-database','Player Database','players.html'],,
+  ['player-database','Player Database','players.html'],
   ['maps','Maps','maps.html'],
   ['weapons','Weapons','weapons.html'],
   ['abilities','Abilities','abilities.html'],
-  ['vote','Community Vote','vote.html'],  
+  ['vote','Community Vote','vote.html'],
   ['updates','Updates','updates.html']
 ];
 const page = document.body.dataset.page;
@@ -31,7 +32,7 @@ const flag = c => `images/flags/${c}.png`;
 
 document.body.insertAdjacentHTML('afterbegin', `
 <aside class="sidebar">
-  <a class="brand" href="index.html">
+  <a class="brand" href="${CONFIG.gameUrl}" target="_blank" rel="noopener">
     <img src="images/logo.png" alt="${CONFIG.siteName}" onerror="this.onerror=null;this.src='images/placeholder.png'">
   </a>
   <div class="side-scroll">
