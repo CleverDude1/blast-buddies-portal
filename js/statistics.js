@@ -1,12 +1,11 @@
-// Statistics page. Needs: js/layout.js, js/clan-colors.js (CLAN_COLORS), /api/stats (records, level 100, guns) and /api/rooms (live players).
+// Statistics page. Needs: js/layout.js, js/clan-colors.js (CLAN_COLORS), js/weapon-names.js, /api/stats (records, level 100, guns) and /api/rooms (live players).
 const STATS_URL = '/api/stats';
 const PODIUM_URL = '/api/podium';          // same data the Podium page uses (medals, players, clans)
 const ROOMS_URL = '/api/rooms';          // same project; use the full https://blast-buddies-portal.vercel.app/api/rooms if this page is hosted elsewhere
 const ROOMS_EVERY = 30000;               // refresh the "online now" card every 30 s
 const REGIONS = [['na', 'North America'], ['eu', 'Europe'], ['as', 'Asia']];
 
-// topWeaponId -> weapon name (must match images/weapons/<Name>.png). FILL THIS IN, e.g. { 9: 'Assault', 12: 'Sniper' }
-const WEAPON_NAMES = {};
+const WEAPON_NAMES = window.BB_WEAPONS || {};   // topWeaponId -> name, defined in js/weapon-names.js (name = image file in images/weapons)
 const wName = id => WEAPON_NAMES[id] || 'Weapon ' + id;
 const wImg = id => `images/weapons/${WEAPON_NAMES[id] || id}.png`;
 
