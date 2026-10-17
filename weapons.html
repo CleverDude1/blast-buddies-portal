@@ -14,11 +14,27 @@
 .wt-pop{right:6px;font-size:9px;padding:3px 7px;border-radius:999px;background:var(--gold);color:#10150c;letter-spacing:.02em;white-space:nowrap}
 #wdMeta{margin:6px 0 10px;font-size:14px;color:var(--muted);line-height:1.6}
 #wdMeta b{color:var(--text,#fff)}
+/* most popular guns panel */
+.wp-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-top:12px}
+.wp-col{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.wp-col h4{margin:0 0 8px;font-size:13px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.wp-row{display:grid;grid-template-columns:20px 44px 1fr;gap:10px;align-items:center;padding:6px 0;cursor:pointer}
+.wp-row>b{color:var(--muted);text-align:center}
+.wp-row img{width:44px;height:44px;object-fit:contain;background:var(--card2);border-radius:8px}
+.wp-row .t{display:flex;justify-content:space-between;gap:8px;font-weight:700}
+.wp-row small{color:var(--muted);font-weight:600}
+.wp-bar{height:6px;border-radius:4px;background:#050704;margin-top:5px;overflow:hidden}
+.wp-bar i{display:block;height:100%;background:linear-gradient(90deg,#d9921f,#ffd24d)}
 </style>
 </head>
 <body data-page="weapons">
 
 <template id="page-content">
+  <section class="panel" id="popPanel" style="display:none">
+    <h3>Most popular guns</h3>
+    <p class="muted">The main weapon of the top 50 players on each leaderboard. Tap a gun for details.</p>
+    <div class="wp-cols" id="popCols"></div>
+  </section>
   <div class="weapon-sections" id="weaponSections"></div>
 
   <dialog id="weaponDlg">
@@ -46,15 +62,21 @@ const WEAPONS = [
 const INFO = {};
 
 const API_VOTE = '/api/hourly?mode=vote';          // community tier list results
-const API_POP = '/api/stats?mode=weapons';         // main weapon of the top-50 players (daily, weekly, ranked)
+const API_POP = '/api/stats?mode=weapons';         // main weapon of the top-50 players (daily, weekly, ranked): { guns: { day: { total, list: [{ id, count }] }, ... } }
 const CAT_KEY = { Primary: 'primary', Secondary: 'secondary', Grenades: 'grenades' };
-const WEAPON_NAMES = window.BB_WEAPONS || {};
+const BOARD_LABEL = { day: 'Daily', week: 'Weekly', ranked: 'Ranked' };
+// topWeaponId -> name. Uses js/weapon-names.js when loaded; the built-in copy keeps names working if that script is missing.
+const WEAPON_NAMES = window.BB_WEAPONS || { 1: 'Assault', 2: 'Burst', 3: 'Shotgun', 4: 'MAC-10', 5: 'Lmg', 6: 'Sniper', 7: 'UMP-45', 9: 'RayGun', 10: 'Energy', 11: 'UMP-45', 12: 'Thompson', 15: 'Bow', 101: 'Knife' };
 let tiers = {}, pop = null;                        // tiers['Primary/Assault'] = { tier, avg };  pop = { counts, total, top }
 
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const wImg = n => `images/weapons/${n}.${IMG_EXT}`;
+const wName = id => WEAPON_NAMES[id] || 'Weapon ' + id;
+const wImgById = id => wImg(WEAPON_NAMES[id] || id);
 const fallback = `this.onerror=null;this.src='images/placeholder.png'`;
 
-document.getElementById('weaponSections').innerHTML = WEAPONS.map(([cat, list]) => `
+$('weaponSections').innerHTML = WEAPONS.map(([cat, list]) => `
   <section class="panel weapon-panel">
     <h3>${cat}</h3>
     <div class="weapon-grid">
@@ -77,7 +99,7 @@ function tierMap(d) {                              // same rule as the Community
 }
 function popMap(g) {                               // adds up the top-50 boards; the weapon used by the most players is "most popular"
   const counts = {}; let total = 0;
-  for (const b of ['day', 'week', 'ranked']) {
+  for (const b of Object.keys(BOARD_LABEL)) {
     const x = g?.[b]; if (!x) continue;
     total += x.total || 0;
     for (const { id, count } of x.list || []) { const n = WEAPON_NAMES[id]; if (n) counts[n] = (counts[n] || 0) + count; }
@@ -95,29 +117,47 @@ function badges() {
     if (h) t.insertAdjacentHTML('afterbegin', h);
   });
 }
+// the top 3 guns of each board (same numbers as the cards on the Statistics page)
+function popPanel(g) {
+  const cols = Object.entries(BOARD_LABEL).map(([b, label]) => {
+    const x = g?.[b], list = (x?.list || []).slice(0, 3);
+    if (!list.length) return '';
+    return `<div class="wp-col"><h4>${label}</h4>${list.map((w, i) => `<div class="wp-row" data-name="${esc(wName(w.id))}">
+        <b>${i + 1}</b><img src="${esc(wImgById(w.id))}" alt="" onerror="${fallback}">
+        <div><div class="t"><span>${esc(wName(w.id))}</span><small>${w.count} of ${x.total}</small></div>
+        <div class="wp-bar"><i style="width:${x.total ? w.count / x.total * 100 : 0}%"></i></div></div></div>`).join('')}</div>`;
+  }).join('');
+  if (!cols) return;
+  $('popCols').innerHTML = cols; $('popPanel').style.display = '';
+}
+$('popCols').addEventListener('click', e => {
+  const r = e.target.closest('.wp-row'); if (!r) return;
+  const t = [...document.querySelectorAll('.weapon-tile')].find(x => x.dataset.name === r.dataset.name);
+  if (t) t.click();
+});
 fetch(API_VOTE).then(r => r.json()).then(d => { if (d.results) { tiers = tierMap(d); badges(); } }).catch(() => {});
-fetch(API_POP).then(r => r.json()).then(d => { if (d.guns) { pop = popMap(d.guns); badges(); } }).catch(() => {});
+fetch(API_POP).then(r => r.json()).then(d => { if (d.guns) { pop = popMap(d.guns); badges(); popPanel(d.guns); } }).catch(() => {});
 
 // ---------- details popup ----------
-const dlg = document.getElementById('weaponDlg');
+const dlg = $('weaponDlg');
 document.querySelectorAll('.weapon-tile').forEach(t => t.onclick = () => {
   const n = t.dataset.name;
-  const img = document.getElementById('wdImg');
+  const img = $('wdImg');
   img.onerror = () => { img.onerror = null; img.src = 'images/placeholder.png'; };
   img.src = wImg(n);
   img.alt = n;
-  document.getElementById('wdName').textContent = n;
-  document.getElementById('wdCat').textContent = t.dataset.cat;
+  $('wdName').textContent = n;
+  $('wdCat').textContent = t.dataset.cat;
   const tr = tiers[t.dataset.cat + '/' + n], c = pop && pop.counts[n];
-  document.getElementById('wdMeta').innerHTML = [
+  $('wdMeta').innerHTML = [
     tr ? `Community tier <b>${tr.tier}</b> (average ${tr.avg}/5)` : '',
     pop && pop.top === n ? '<b>Most popular</b> weapon among top players' : '',
     c ? `Main weapon of ${c} of ${pop.total} players on the top-50 boards` : ''
   ].filter(Boolean).join('<br>');
-  document.getElementById('wdInfo').innerHTML = INFO[n] || 'More information coming soon.';
+  $('wdInfo').innerHTML = INFO[n] || 'More information coming soon.';
   dlg.showModal();
 });
-document.getElementById('weaponClose').onclick = () => dlg.close();
+$('weaponClose').onclick = () => dlg.close();
 dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 </script>
 </body>
