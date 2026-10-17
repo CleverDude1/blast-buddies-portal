@@ -5,7 +5,9 @@ const ROOMS_URL = '/api/rooms';          // same project; use the full https://b
 const ROOMS_EVERY = 30000;               // refresh the "online now" card every 30 s
 const REGIONS = [['na', 'North America'], ['eu', 'Europe'], ['as', 'Asia']];
 
-const WEAPON_NAMES = window.BB_WEAPONS || {};   // topWeaponId -> name, defined in js/weapon-names.js (name = image file in images/weapons)
+// topWeaponId -> name (= image file in images/weapons). Uses js/weapon-names.js when it is loaded; the built-in copy keeps names working if that script is missing or cached.
+const WEAPON_NAMES = window.BB_WEAPONS || { 1: 'Assault', 2: 'Burst', 3: 'Shotgun', 4: 'MAC-10', 5: 'Lmg', 6: 'Sniper', 7: 'UMP-45', 9: 'RayGun', 10: 'Energy', 11: 'UMP-45', 12: 'Thompson', 15: 'Bow', 101: 'Knife' };
+if (!window.BB_WEAPONS) console.warn('js/weapon-names.js was not loaded, using the built-in weapon names');
 const wName = id => WEAPON_NAMES[id] || 'Weapon ' + id;
 const wImg = id => `images/weapons/${WEAPON_NAMES[id] || id}.png`;
 
