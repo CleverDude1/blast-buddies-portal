@@ -1,4 +1,4 @@
-// Community Vote. GET -> { voted:false, items, tiers } or { voted:true, mine, items, tiers, total, results }.
+// Community Vote. GET -> { voted, mine, items, tiers, total, results } (results are visible to everyone; voted:false + mine:{} until you vote).
 // POST { tiers } -> first time: creates the ballot. Already voted: replaces that ballot's picks (edit).
 // One ballot per cookie per poll (DB unique constraint) + max 3 new ballots per hashed IP/user-agent.
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, VOTE_SALT
@@ -11,7 +11,9 @@ const ITEMS = {
   maps: ['Arena','Blocktown','Canyon','Favela','Nukeville','Outpost','Prototype','Pyramids','Rooftops','Shipment','SunnyTown'],
   primary: ['Assault','Bow','Burst','Lmg','MAC-10','Shotgun','Sniper','Thompson','UMP-45'],
   secondary: ['Energy','Flare','Pistol','RayGun','Revolver','Snare','Knife'],
-  grenades: ['BlackHole','Flashbang','Inferno','Shockwave','Smoke','Storm','Updraft','Warp'],
+  grenades: ['BlackHole','Flashbang','Frag','Inferno','Shockwave','Smoke','Storm','Updraft','Warp'],
+  // must match the image file names in images/abilities exactly (including capitalization)
+  abilities: ['chrono-orb','cloak','dash','decoy','grapple','pulse','shield','slam'],
 };
 
 const SB = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SECRET_KEY;
@@ -48,6 +50,11 @@ async function results() {
     pctTop: total ? Math.round((r.top_votes / total) * 1000) / 10 : 0,   // % of ALL voters who put it in S or A
     avgScore: Number(r.avg_score),
   });
+  // items nobody has rated yet (for example a new category) still show up, with no votes
+  for (const c in ITEMS) {
+    const have = new Set((out[c] ||= []).map(r => r.item));
+    for (const item of ITEMS[c]) if (!have.has(item)) out[c].push({ item, pctTop: 0, avgScore: 0 });
+  }
   for (const k in out) out[k].sort((a, b) => b.pctTop - a.pctTop || b.avgScore - a.avgScore);
   return { total, results: out };
 }
@@ -66,7 +73,8 @@ export default async function handler(req, res) {
     const ballotId = await myBallot(id);
 
     if (req.method === 'GET') {
-      return res.status(200).json(ballotId ? await full(ballotId) : { voted: false, items: ITEMS, tiers: TIERS });
+      // people who have not voted yet see the results too (the page shows a "Cast your vote" button)
+      return res.status(200).json(ballotId ? await full(ballotId) : { voted: false, mine: {}, items: ITEMS, tiers: TIERS, ...(await results()) });
     }
     if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
 
