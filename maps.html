@@ -8,10 +8,18 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<style>
+/* community tier letter on each official map (same look as the Weapons page) */
+.wt-b{position:absolute;top:8px;left:8px;z-index:2;font-style:normal;font-weight:800;line-height:1}
+.wt-tier{min-width:30px;height:30px;padding:0 6px;display:flex;align-items:center;justify-content:center;border-radius:8px;font-size:18px;color:#10150c;background:#3a4630;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.wt-tier.t-S{background:#ff7b7b}.wt-tier.t-A{background:#ffb35c}.wt-tier.t-B{background:#ffe066}.wt-tier.t-C{background:#a3e36f}.wt-tier.t-D{background:#6fc8ff}
+#mapMeta{margin:6px 0 10px;font-size:14px;color:var(--muted);line-height:1.6}
+#mapMeta b{color:var(--text,#fff)}
+</style>
 </head>
 <body data-page="maps">
 <template id="page-content">
-<section class="panel"><h1 class="page-title">Maps</h1><p class="muted">Pick a map to see its details.</p></section>
+<section class="panel"><h1 class="page-title">Maps</h1><p class="muted">Pick a map to see its details. The letter on each map is its community tier from the vote.</p></section>
 <div class="map-grid" id="maps"></div>
 
 <section class="panel" id="customHead" style="margin-top:32px"><h2 class="page-title" style="font-size:28px">Custom Maps</h2><p class="muted">Maps made by players. Pick one to see its details and map ID.</p></section>
