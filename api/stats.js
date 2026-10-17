@@ -3,6 +3,7 @@
 // Every call also checks the live boards against the stored records and replaces any that were beaten.
 // /api/stats?mode=sample   -> called by the Supabase cron once an hour (:55) (Bearer secret): runs the clan league tick, stores one online-players sample + updates the all-time peak
 // /api/stats?mode=league   -> the open clan league day + roster (league.html)
+// /api/stats?mode=weapons  -> main weapon of the top-50 players per board (weapons.html)
 // /api/stats?mode=backfill&key=ADMIN_KEY[&after=ID]  -> one-off: rebuild records + level 100 from stored raw_snapshots
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, STATS_ADMIN_KEY (only for backfill)
 import { URLS, fetchLive } from './_lib/shared.js';
@@ -38,6 +39,14 @@ export default async function handler(req, res) {
     if (req.query.mode === 'league') {            // clan league page
       res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
       return res.status(200).json(await loadLeague());
+    }
+    if (req.query.mode === 'weapons') {           // Weapons page: main weapon of the top-50 players per board
+      const guns = {};
+      await Promise.all(['day', 'week', 'ranked'].map(async b => {
+        try { guns[b] = weaponCounts(await fetchLive(URLS[b])); } catch (e) { console.error(`weapons ${b} failed:`, e.message); guns[b] = { total: 0, list: [] }; }
+      }));
+      res.setHeader('Cache-Control', 'public, s-maxage=600, stale-while-revalidate=1800');
+      return res.status(200).json({ guns });
     }
     if (req.query.mode === 'backfill-players') {   // one-off: fill/repair the permanent players table from stored snapshots
       if (!process.env.STATS_ADMIN_KEY || req.query.key !== process.env.STATS_ADMIN_KEY)
