@@ -18,6 +18,12 @@
 .vt-view .vt-item small{color:var(--muted);font-weight:600;font-size:11px}
 .vt-me{position:absolute;top:4px;right:4px;font-size:10px;font-weight:800;color:#10150c;background:var(--gold);border-radius:999px;padding:1px 6px}
 .vt-empty{color:var(--muted);font-size:13px;padding:10px}
+/* call to action for people who have not voted yet */
+.vt-cta{background:var(--gold);color:#10150c;font-weight:800;position:relative;animation:vtPulse 2s infinite}
+.vt-bang{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin-left:8px;border-radius:50%;background:#10150c;color:var(--gold);font-size:13px;font-weight:800}
+@keyframes vtPulse{0%{box-shadow:0 0 0 0 rgba(242,183,53,.6)}70%{box-shadow:0 0 0 12px rgba(242,183,53,0)}100%{box-shadow:0 0 0 0 rgba(242,183,53,0)}}
+@media(prefers-reduced-motion:reduce){.vt-cta{animation:none}}
+.vt-banner{max-width:1400px;margin:0 auto 14px;padding:12px 16px;border:1px solid #6a5a1f;background:rgba(242,183,53,.08);border-radius:14px;font-size:14px}
 .vt-rank{max-width:1400px;margin:0 auto;background:rgba(15,20,11,.94);border:1px solid var(--line);border-radius:18px;overflow:hidden}
 .vt-rk{display:grid;grid-template-columns:44px 56px minmax(120px,1fr) minmax(120px,2fr) 70px 90px;gap:14px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line)}
 .vt-rk:last-child{border-bottom:0}
@@ -47,9 +53,9 @@
 <script>
 (() => {
   const API = '/api/hourly?mode=vote';
-  const LABEL = { maps: 'Maps', primary: 'Primary', secondary: 'Secondary', grenades: 'Grenades' };
+  const LABEL = { maps: 'Maps', primary: 'Primary', secondary: 'Secondary', grenades: 'Grenades', abilities: 'Abilities' };
   const CATS = Object.keys(LABEL);
-  const IMG = { maps: 'images/maps', primary: 'images/weapons', secondary: 'images/weapons', grenades: 'images/weapons' };
+  const IMG = { maps: 'images/maps', primary: 'images/weapons', secondary: 'images/weapons', grenades: 'images/weapons', abilities: 'images/abilities' };
   const FB = `this.onerror=null;this.src='images/placeholder.png'`;
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const emptyPicks = () => Object.fromEntries(CATS.map(c => [c, {}]));
@@ -57,18 +63,22 @@
   let ITEMS, TIERS, cat = 'maps', sel = null, busy = false, editing = false, saved = null;   // saved = latest results payload
   let mode = 'form', view = 'tiers';                                                         // mode: form | results, view: tiers | ranking
   let picks = emptyPicks();
+  // categories the server actually sent (so the page keeps working if one is missing)
+  const cats = () => CATS.filter(c => (ITEMS && ITEMS[c]) || (saved && saved.results && saved.results[c]));
+  const catTabs = () => cats().map(c => `<button data-cat="${c}" class="${c === cat ? 'on' : ''}">${LABEL[c]}</button>`).join('');
 
   const tile = (c, n) => `<button class="weapon-tile vt-item${sel === n ? ' sel' : ''}" draggable="true" data-item="${esc(n)}">
       <img src="${IMG[c]}/${esc(n)}.png" alt="" onerror="${FB}"><span>${esc(n)}</span></button>`;
 
   function form() {
     mode = 'form';
-    const placed = Object.keys(picks[cat]).length, total = ITEMS[cat].length;
+    if (!cats().includes(cat)) cat = cats()[0];
+    const placed = Object.keys(picks[cat]).length, total = ITEMS[cat].length, canGoBack = !!(saved && saved.results);
     intro.textContent = editing
       ? 'Editing your tier list. Saving replaces your previous picks, and your vote still counts once.'
-      : 'Sort each category into tiers, then submit. Results appear after you submit, and you can change your tier list later.';
+      : 'Sort each category into tiers, then submit. Your vote counts once and you can change your tier list later.';
     app.innerHTML = `
-      <div class="toolbar"><div class="seg">${CATS.map(c => `<button data-cat="${c}" class="${c === cat ? 'on' : ''}">${LABEL[c]}</button>`).join('')}</div>
+      <div class="toolbar"><div class="seg">${catTabs()}</div>
         <span class="muted" style="align-self:center">${placed}/${total} placed in ${LABEL[cat]}. Tap an item, then tap a tier (or drag it).</span></div>
       <section class="panel vt-board">
         ${[...TIERS, null].map(t => `<div class="vt-row${t ? ' t-' + t : ''}" data-tier="${t || ''}">
@@ -77,7 +87,7 @@
       </section>
       <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
         <button class="pill" id="vtSubmit">${editing ? 'Save changes' : 'Submit my tier list'}</button>
-        ${editing ? '<button class="pill" id="vtCancel">Cancel</button>' : ''}
+        ${canGoBack ? `<button class="pill" id="vtCancel">${editing ? 'Cancel' : 'Back to results'}</button>` : ''}
       </div>`;
   }
 
@@ -87,11 +97,12 @@
     sel = null; form();
   }
 
+  // opens the tier list editor: empty for new voters, filled with their picks for people who already voted
   function startEdit() {
-    ITEMS = saved.items; TIERS = saved.tiers;
+    ITEMS = saved.items || ITEMS; TIERS = saved.tiers || TIERS;
     picks = emptyPicks();
     for (const c of CATS) Object.assign(picks[c], saved.mine?.[c] || {});
-    cat = 'maps'; sel = null; editing = true; form();
+    cat = cats()[0]; sel = null; editing = !!saved.voted; form();
   }
 
   app.addEventListener('click', e => {
@@ -124,12 +135,14 @@
 
   // ---------- results: the community tier list (items placed by average score) or a ranking ----------
   function results(d) {
-    saved = d; editing = false; mode = 'results'; TIERS = d.tiers || TIERS;
+    saved = d; editing = false; mode = 'results'; TIERS = d.tiers || TIERS; ITEMS = d.items || ITEMS;
+    if (!cats().includes(cat)) cat = cats()[0];
     const mine = d.mine?.[cat] || {};
     // average score runs from top tier (best) down to the last tier; turn it back into a tier letter
     const tierOf = avg => TIERS[Math.min(TIERS.length - 1, Math.max(0, Math.round(TIERS.length - avg)))];
     const list = (d.results[cat] || []).map(r => ({ ...r, tier: r.avgScore > 0 ? tierOf(r.avgScore) : null })).sort((a, b) => (b.avgScore || 0) - (a.avgScore || 0));
-    intro.textContent = `${d.edited ? 'Your tier list was updated.' : 'Thanks for voting!'} ${d.total} ballot${d.total === 1 ? '' : 's'} so far. Items are placed by their average score across all voters.`;
+    const ballots = `${d.total} ballot${d.total === 1 ? '' : 's'} so far. Items are placed by their average score across all voters.`;
+    intro.textContent = d.voted ? `${d.edited ? 'Your tier list was updated.' : 'Thanks for voting!'} ${ballots}` : ballots;
     const me = r => mine[r.item] ? `<span class="vt-me" title="Your pick">You: ${esc(mine[r.item])}</span>` : '';
     const img = r => `<img src="${IMG[cat]}/${esc(r.item)}.png" alt="" onerror="${FB}">`;
 
@@ -149,18 +162,22 @@
         <span class="sc"><b>${r.avgScore}</b><small>/${TIERS.length}</small></span>
         <span class="pc">${r.pctTop}% S/A</span></div>`).join('') || '<p class="muted" style="padding:20px">No votes yet.</p>'}</section>`;
 
-    app.innerHTML = `<div class="vt-bar-top">
-        <div class="seg">${CATS.map(c => `<button data-cat="${c}" class="${c === cat ? 'on' : ''}">${LABEL[c]}</button>`).join('')}</div>
+    const action = d.voted
+      ? '<button class="pill" id="vtEdit">Edit my tier list</button>'
+      : '<button class="pill vt-cta" id="vtEdit" title="You have not voted yet">Cast your vote<span class="vt-bang">!</span></button>';
+    app.innerHTML = (d.voted ? '' : '<div class="vt-banner"><b>You have not voted yet.</b> Have a look at the results, then add your own tier list. It only takes a minute and counts once.</div>')
+      + `<div class="vt-bar-top">
+        <div class="seg">${catTabs()}</div>
         <div class="seg"><button data-view="tiers" class="${view === 'tiers' ? 'on' : ''}">Tier list</button><button data-view="ranking" class="${view === 'ranking' ? 'on' : ''}">Ranking</button></div>
-        <span class="grow"></span><button class="pill" id="vtEdit">Edit my tier list</button></div>`
+        <span class="grow"></span>${action}</div>`
       + (view === 'tiers' ? tiersView : rankView);
   }
 
   (async () => {
     try {
       const d = await (await fetch(API)).json();
-      if (d.voted) return results(d);
-      ({ items: ITEMS, tiers: TIERS } = d); form();
+      if (d.results) return results(d);                  // results come first, voted or not
+      ({ items: ITEMS, tiers: TIERS } = d); form();      // older server response without results: go straight to voting
     } catch (x) { intro.textContent = 'Could not load the vote. Please try again later.'; }
   })();
 })();
