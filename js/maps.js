@@ -44,10 +44,11 @@ $('customMaps').innerHTML = CUSTOM_MAPS.map(m => `
     <button class="see-details" data-custom="${esc(m.id)}">See details</button>
   </article>`).join('');
 
-// ---------- community tier letters ----------
-let tiers = {};                                    // tiers['Arena'] = { tier, avg, pct }
+// ---------- community tier letters + sorting ----------
+let tiers = {}, tierList = [];                     // tiers['Arena'] = { tier, avg, pct };  tierList = ['S','A','B','C','D']
 function tierMap(d) {                              // same rule as the Weapons page and the Community Vote page: average score -> tier letter
   const T = d.tiers || [], out = {};
+  tierList = T;
   if (!T.length) return out;
   for (const r of d.results?.maps || [])
     if (r.avgScore > 0) out[r.item] = { tier: T[Math.min(T.length - 1, Math.max(0, Math.round(T.length - r.avgScore)))], avg: r.avgScore, pct: r.pctTop };
@@ -60,7 +61,16 @@ function badges() {
     if (tr) t.insertAdjacentHTML('afterbegin', `<b class="wt-b wt-tier t-${tr.tier}" title="Community tier ${tr.tier} (average ${tr.avg}/5)">${tr.tier}</b>`);
   });
 }
-fetch(API_VOTE).then(r => r.json()).then(d => { if (d.results) { tiers = tierMap(d); badges(); } }).catch(() => {});
+// moves the existing cards around (nothing is re-created, so the styling is identical): best tier first, then higher average,
+// and maps nobody has rated yet stay at the end in their original order
+function sortMaps() {
+  const grid = $('maps');
+  [...grid.children].map((card, i) => {
+    const tr = tiers[card.querySelector('[data-map]').dataset.map];
+    return { card, i, rank: tr ? tierList.indexOf(tr.tier) : 99, avg: tr ? -tr.avg : 0 };
+  }).sort((a, b) => a.rank - b.rank || a.avg - b.avg || a.i - b.i).forEach(x => grid.appendChild(x.card));
+}
+fetch(API_VOTE).then(r => r.json()).then(d => { if (d.results) { tiers = tierMap(d); badges(); sortMaps(); } }).catch(() => {});
 
 // ---------- details popups ----------
 $('maps').addEventListener('click', async e => {
