@@ -16,6 +16,8 @@ const CUSTOM_MAPS = [
   { name: 'Roman Colosseum',        image: 'images/maps/custom/Roman-Colosseum.png',        id: 'b0c63097-40b4-42bb-97fd-dea5a571ff3c', creator: 'pEyooYhCf-xj', size: [48, 96, 48], ground: 2, created: '2026-10-10T20:56:21.331Z', updated: '2026-10-10T20:57:21.242Z' },
 ];
 
+const API_VOTE = '/api/hourly?mode=vote';          // community tier list results (same call the Weapons page uses)
+
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const PH = "this.onerror=null;this.src='images/placeholder.png'";
@@ -42,10 +44,30 @@ $('customMaps').innerHTML = CUSTOM_MAPS.map(m => `
     <button class="see-details" data-custom="${esc(m.id)}">See details</button>
   </article>`).join('');
 
+// ---------- community tier letters ----------
+let tiers = {};                                    // tiers['Arena'] = { tier, avg, pct }
+function tierMap(d) {                              // same rule as the Weapons page and the Community Vote page: average score -> tier letter
+  const T = d.tiers || [], out = {};
+  if (!T.length) return out;
+  for (const r of d.results?.maps || [])
+    if (r.avgScore > 0) out[r.item] = { tier: T[Math.min(T.length - 1, Math.max(0, Math.round(T.length - r.avgScore)))], avg: r.avgScore, pct: r.pctTop };
+  return out;
+}
+function badges() {
+  document.querySelectorAll('.map-thumb[data-map]').forEach(t => {
+    t.querySelectorAll('.wt-b').forEach(x => x.remove());
+    const tr = tiers[t.dataset.map];
+    if (tr) t.insertAdjacentHTML('afterbegin', `<b class="wt-b wt-tier t-${tr.tier}" title="Community tier ${tr.tier} (average ${tr.avg}/5)">${tr.tier}</b>`);
+  });
+}
+fetch(API_VOTE).then(r => r.json()).then(d => { if (d.results) { tiers = tierMap(d); badges(); } }).catch(() => {});
+
+// ---------- details popups ----------
 $('maps').addEventListener('click', async e => {
   const b = e.target.closest('[data-map]'); if (!b) return;
-  const name = b.dataset.map;
+  const name = b.dataset.map, tr = tiers[name];
   $('dlgBody').innerHTML = `<h3>${esc(name)}</h3><div class="muted">Blast Buddies map</div>
+    <div id="mapMeta">${tr ? `Community tier <b>${tr.tier}</b> (average ${tr.avg}/5)<br>${tr.pct}% of voters put it in S or A` : ''}</div>
     <img class="dlg-img" src="images/maps/${esc(name)}.png" alt="${esc(name)}" onerror="${PH}">
     <div class="dlg-section" id="detailsSlot">Loading map details...</div>`;
   $('dlg').showModal();
