@@ -1,8 +1,9 @@
 // ================= CONFIG =================
-const API_URL = '/api/leaderboard-day';
+const API_URL = '/api/pangolin-test';
 const TOP_N = 50;
 
 // xpToLevel() and MAX_LEVEL come from js/level.js
+// window.BB_WEAPONS (weapon id -> name, matches images/weapons/<name>.png) comes from js/weapon-name.js
 
 // Clan color number -> CSS color. Colors not listed fall back to white. Add more as you identify them.
 const CLAN_COLORS = {
@@ -32,15 +33,14 @@ async function getPersonalBests(players) {
 }
 // TODO: clan API. Should return { color: <number> } for a clan tag.
 async function getClanInfo(tag) { return null; }
-// TODO: player detail API. Should return extra stats for one playerId.
-async function getPlayerDetails(playerId) { return null; }
 
 // ================= HELPERS =================
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const kdrOf = p => p.deaths > 0 ? p.kills / p.deaths : p.kills;
-const fmt = n => Number(n).toLocaleString();
+const fmt = n => Number(n ?? 0).toLocaleString();
 const PH = "this.onerror=null;this.src='images/placeholder.png'";
+const weaponName = id => (window.BB_WEAPONS && window.BB_WEAPONS[id]) || ('Weapon ' + id);
 
 // mode 'high': higher is better (kills, kdr). mode 'low': lower is better (deaths).
 // Returns fill 0..1 (proportional to the personal best) and pct change vs best.
@@ -70,19 +70,6 @@ function demoPlayers() {
     totalXp: 1170000 - i * 15000, characterSkinId: 1, topWeaponId: (i % 12) + 1, topWeaponSkinId: 1,
     clanTag: ['FT', 'BB', 'XO', ''][i % 4], clanColor: i % 12 }));
 }
-// Finds the array of players anywhere inside the API response
-function extractPlayers(d, depth = 0) {
-  if (Array.isArray(d)) return d;
-  if (!d || typeof d !== 'object' || depth > 3) return null;
-  for (const v of Object.values(d)) {
-    if (Array.isArray(v) && v.length && typeof v[0] === 'object' && ('playerId' in v[0] || 'name' in v[0])) return v;
-  }
-  for (const v of Object.values(d)) {
-    const found = extractPlayers(v, depth + 1);
-    if (found) return found;
-  }
-  return null;
-}
 
 let isDemo = false;
 async function load() {
@@ -92,8 +79,8 @@ async function load() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const d = await res.json();
     console.log('API response:', d);
-    players = extractPlayers(d);
-    if (!players) throw new Error('No player list found in the response');
+    players = d?.leaderboards?.daily?.top;
+    if (!Array.isArray(players) || !players.length) throw new Error('No daily leaderboard found in the response');
   } catch (e) {
     console.warn('API failed:', e); players = demoPlayers(); demo = true;
   }
@@ -148,25 +135,68 @@ function render() {
 $('q').addEventListener('input', render);
 
 // ================= PLAYER DETAILS MODAL =================
-$('rows').addEventListener('click', async e => {
+// Everything comes from the leaderboard row itself (stats, seasons, weaponStats), no extra API call.
+const S_TABLE = 'width:100%;border-collapse:collapse;font-size:.9em';
+const S_CELL = 'padding:4px 8px;text-align:right';
+const S_CELL_L = 'padding:4px 8px;text-align:left';
+
+function renderDetails(el, p) {
+  const parts = [];
+
+  // Lifetime stats (casual play included)
+  const st = p.stats;
+  if (st) {
+    const lifeKdr = st.deaths > 0 ? st.kills / st.deaths : st.kills;
+    parts.push(`<h4>Lifetime</h4><div class="dlg-grid">
+      <div>Kills<b>${fmt(st.kills)}</b></div><div>Deaths<b>${fmt(st.deaths)}</b></div>
+      <div>KDR<b>${lifeKdr.toFixed(2)}</b></div><div>Games<b>${fmt(st.games)}</b></div>
+      <div>Assists<b>${fmt(st.assists)}</b></div>
+    </div>`);
+  }
+
+  // Ranked seasons
+  const seasons = (p.seasons || []).slice().sort((a, b) => a.season - b.season);
+  if (seasons.length) {
+    parts.push(`<h4>Ranked seasons</h4><table style="${S_TABLE}">
+      <tr><th style="${S_CELL_L}">Season</th><th style="${S_CELL}">Trophies</th><th style="${S_CELL}">Wins</th><th style="${S_CELL}">Losses</th><th style="${S_CELL}">Win rate</th></tr>
+      ${seasons.map(s => {
+        const g = (s.rankedWins || 0) + (s.rankedLosses || 0);
+        const wr = g ? (s.rankedWins / g * 100).toFixed(1) + '%' : '-';
+        return `<tr><td style="${S_CELL_L}">${esc(s.season)}</td><td style="${S_CELL}">${fmt(s.trophies)}</td><td style="${S_CELL}">${fmt(s.rankedWins)}</td><td style="${S_CELL}">${fmt(s.rankedLosses)}</td><td style="${S_CELL}">${wr}</td></tr>`;
+      }).join('')}
+    </table>`);
+  }
+
+  // Weapons, most kills first
+  const weapons = (p.weaponStats || []).filter(w => w.kills > 0).sort((a, b) => b.kills - a.kills);
+  if (weapons.length) {
+    parts.push(`<h4>Weapons</h4><table style="${S_TABLE}">
+      <tr><th style="${S_CELL_L}">Weapon</th><th style="${S_CELL}">Kills</th><th style="${S_CELL}">Headshots</th><th style="${S_CELL}">HS %</th></tr>
+      ${weapons.map(w => {
+        const name = weaponName(w.weaponId);
+        const hs = w.weaponId === 101 ? '-' : (w.kills ? (w.headshots / w.kills * 100).toFixed(1) + '%' : '-');   // 101 = knife, no headshots
+        return `<tr><td style="${S_CELL_L}"><img src="images/weapons/${esc(name)}.png" alt="" title="${esc(name)}" onerror="${PH}" style="height:24px;vertical-align:middle;margin-right:6px">${esc(name)}</td><td style="${S_CELL}">${fmt(w.kills)}</td><td style="${S_CELL}">${w.weaponId === 101 ? '-' : fmt(w.headshots)}</td><td style="${S_CELL}">${hs}</td></tr>`;
+      }).join('')}
+    </table>`);
+  }
+
+  el.innerHTML = parts.join('') || 'No detailed stats available for this player.';
+}
+
+$('rows').addEventListener('click', e => {
   const btn = e.target.closest('.inspect'); if (!btn) return;
   const r = rows.find(x => x.p.playerId === btn.dataset.id), p = r.p;
   $('dlgBody').innerHTML = `<h3>${esc(p.name)}</h3><div class="muted">${p.clanTag ? '[' + esc(p.clanTag) + '] · ' : ''}ID ${esc(p.playerId)}</div>
+    <h4>Today</h4>
     <div class="dlg-grid">
       <div>Level<b>${r.level}</b></div><div>Total XP<b>${fmt(p.totalXp)}</b></div>
       <div>Kills<b>${fmt(p.kills)}</b></div><div>Deaths<b>${fmt(p.deaths)}</b></div>
       <div>Assists<b>${fmt(p.assists)}</b></div><div>KDR<b>${r.kdr.toFixed(2)}</b></div>
     </div>
-    <div class="dlg-section" id="detailsSlot">Loading player details...</div>`;
+    <div class="dlg-section" id="detailsSlot"></div>`;
+  renderDetails($('detailsSlot'), p);
   $('dlg').showModal();
-  const d = await getPlayerDetails(p.playerId);   // TODO: wire to real API
-  renderDetails($('detailsSlot'), d);
 });
-// Structure for the detail API response. Add sections here once the API exists.
-function renderDetails(el, d) {
-  if (!d) { el.textContent = 'Detailed stats are not available yet. They will appear here once the player API is connected.'; return; }
-  el.innerHTML = Object.entries(d).map(([k, v]) => `<div><b>${esc(k)}</b>: ${esc(JSON.stringify(v))}</div>`).join('');
-}
 $('dlgClose').onclick = () => $('dlg').close();
 $('dlg').addEventListener('click', e => { if (e.target === $('dlg')) $('dlg').close(); });
 
