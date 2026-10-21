@@ -1,40 +1,21 @@
-
 export default async function handler(req, res) {
-    try {
-        const response = await fetch(
-            "https://eu1-ping.blastbuddies.io/api/leaderboard/day",
-            {
-                headers: {
-                    "Accept": "application/json"
-                }
-            }
-        );
+  try {
+    const response = await fetch(
+      "https://api.pangolinworks.dev/blast-buddies",
+      {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(15000),
+      }
+    );
 
-        const text = await response.text();
+    const body = await response.text();
 
-        let data;
-
-        try {
-            data = JSON.parse(text);
-        } catch {
-            data = text;
-        }
-
-        return res.status(response.status).json({
-            success: response.ok,
-            blastBuddiesStatus: response.status,
-            source: "blast-buddies",
-            leaderboard: "day",
-            retrievedAt: new Date().toISOString(),
-            data: data
-        });
-
-    } catch (error) {
-        return res.status(500).json({
-            success: false,
-            error: error.message,
-            stack: error.stack
-        });
-    }
+    res.setHeader("Cache-Control", "no-store");
+    res.status(response.status).send(body);
+  } catch (error) {
+    res.status(502).json({
+      error: "Could not reach Pangolin Works API",
+      message: error.message,
+    });
+  }
 }
-
