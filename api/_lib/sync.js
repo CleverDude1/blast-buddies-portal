@@ -90,7 +90,10 @@ export function extractList(json) {
 export function ingestLeaderboard(source, list, players, entries) {
   list.forEach((raw, idx) => {
     if (!raw || !raw.playerId) return;
-    players.set(raw.playerId, { ...players.get(raw.playerId), ...pick(raw, PLAYER_FIELDS) });
+    const p = pick(raw, PLAYER_FIELDS);
+    // The combined API sends clanTag "" and clanColor null for players without a clan.
+    if (p.clan_tag === '') p.clan_tag = null;
+    players.set(raw.playerId, { ...players.get(raw.playerId), ...p });
     entries.push({
       board: source.board,
       season: source.season,
