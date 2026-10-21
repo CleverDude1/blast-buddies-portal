@@ -1,12 +1,20 @@
+// Folders/files starting with "_" inside /api are NOT exposed as routes by Vercel,
+// so this list stays private.
+//
+// SOURCES = what we actually fetch (one combined API).
+// BOARDS  = the boards cut out of that response. Keys and urls match the retired
+//           APIs on purpose, so old raw_snapshots, hourAgo(url) lookups and the
+//           clan-updates diff (source = 'clan') keep working. Nothing here is fetched.
+//
+// type: 'leaderboard' -> rows with playerId (players + leaderboard tables)
+// type: 'clans'       -> rows with clanId   (clans tables)
+
 const BASE = process.env.API_BASE_URL || 'https://blast-buddies-portal.vercel.app';
 
-// The only thing we fetch now.
 export const SOURCES = [
   { key: 'pangolin', type: 'bundle', url: `${BASE}/api/pangolin-test` },
 ];
 
-// Boards cut out of the bundle. Keys and urls match the retired APIs, so old raw_snapshots,
-// hourAgo(url) lookups and the clan-updates diff keep working.
 export const BOARDS = [
   { key: 'leaderboard-day',    type: 'leaderboard', board: 'day',    season: 0, url: `${BASE}/api/leaderboard-day`,    pick: (p) => p.leaderboards?.daily?.top },
   { key: 'leaderboard-week',   type: 'leaderboard', board: 'week',   season: 0, url: `${BASE}/api/leaderboard-week`,   pick: (p) => p.leaderboards?.weekly?.top },
