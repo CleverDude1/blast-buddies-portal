@@ -1,11 +1,70 @@
-  // 1. Fetch the bundle
+import { recordPlayerUpdates } from './_lib/player-updates.js';
+import { recordClanUpdates } from './_lib/clan-updates.js';
+import { collect as collectRecords, commit as commitRecords, hourAgo } from './_lib/records.js';
+import { createClient } from '@supabase/supabase-js';
+import { SOURCES, BOARDS } from './_sources/index.js';
+import {
+  ingestLeaderboard,
+  ingestClans,
+  syncEntities,
+  PLAYER_TRACKED,
+  ENTRY_TRACKED,
+  CLAN_TRACKED,
+} from './_lib/sync.js';
+
+const STORE_RAW = process.env.STORE_RAW !== 'false';
+
+async function fetchJson(url, tries = 3) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    try {
+      const res = await fetch(url, {
+        signal: ctrl.signal,
+        headers: { 'user-agent': 'blast-buddies-collector', 'cache-control': 'no-cache' },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return { status: res.status, json: await res.json() };
+    } catch (e) {
+      lastErr = e;
+      await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr;
+}
+
+export default async function handler(req, res) {
+  // Vercel cron sends "Authorization: Bearer <CRON_SECRET>" automatically when CRON_SECRET is set.
+  const secret = process.env.YOUR_ACTUAL_CRON_SECRET;
+  if (!secret) return res.status(500).json({ error: 'YOUR_ACTUAL_CRON_SECRET is not set' });
+  if (req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: 'unauthorized' });
+
+  const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
+    auth: { persistSession: false },
+  });
+
+  const now = new Date().toISOString();
+  const { data: run, error: runErr } = await db
+    .from('collection_runs')
+    .insert({ started_at: now })
+    .select('id')
+    .single();
+  if (runErr) return res.status(500).json({ error: `could not create run: ${runErr.message}` });
+
+  const errors = [];
+  const summary = {};
+
+  // 1. Fetch the combined API
   const results = await Promise.allSettled(SOURCES.map((s) => fetchJson(s.url)));
 
   // 2. Cut it into boards, store raw slices, ingest
   const players = new Map();
   const clans = new Map();
   const entriesBySource = [];
-  const boards = [];            // used by the records step
+  const boards = []; // used by the records step
   let fetchedOk = 0;
 
   for (let i = 0; i < SOURCES.length; i++) {
@@ -54,3 +113,53 @@
       }
     }
   }
+
+  // 3. Change-detect + store
+  const step = async (name, fn) => {
+    try { summary[name] = await fn(); }
+    catch (e) { errors.push({ step: name, error: e.message }); }
+  };
+
+  await step('players', () =>
+    syncEntities(db, {
+      table: 'players', historyTable: 'player_history', keyCols: ['player_id'],
+      tracked: PLAYER_TRACKED, rows: [...players.values()], runId: run.id, now,
+    }));
+
+  for (const { s, entries } of entriesBySource) {
+    await step(`board:${s.key}`, () =>
+      syncEntities(db, {
+        table: 'leaderboard_state', historyTable: 'leaderboard_history',
+        keyCols: ['board', 'season', 'player_id'], tracked: ENTRY_TRACKED,
+        rows: entries, runId: run.id, now, scope: { board: s.board, season: s.season },
+      }));
+  }
+
+  await step('clans', () =>
+    syncEntities(db, {
+      table: 'clans', historyTable: 'clan_history', keyCols: ['clan_id'],
+      tracked: CLAN_TRACKED, rows: [...clans.values()], runId: run.id, now,
+    }));
+  await step('clanUpdates', () => recordClanUpdates());
+  await step('playerUpdates', () => recordPlayerUpdates());
+
+  // Statistics page records (all-time highs, best KDR, biggest gain in 1 hour). Compares each board with the snapshot from ~1 hour ago.
+  await step('records', async () => {
+    const nowMs = Date.parse(now), items = [];
+    for (const { b, payload } of boards) {
+      let prev = null;
+      try { prev = await hourAgo(b.url, nowMs); } catch (e) { /* no earlier snapshot: the 1-hour gains are skipped for this board */ }
+      items.push({ board: b.board, payload, at: nowMs, prevPayload: prev?.payload, prevAt: prev?.at });
+    }
+    await commitRecords(collectRecords(items), nowMs);
+    return { boards: items.length };
+  });
+
+  // 4. Close out the run
+  const status = errors.length === 0 ? 'ok' : fetchedOk > 0 ? 'partial' : 'failed';
+  await db.from('collection_runs')
+    .update({ finished_at: new Date().toISOString(), status, summary, errors })
+    .eq('id', run.id);
+
+  return res.status(status === 'failed' ? 500 : 200).json({ runId: run.id, status, summary, errors });
+}
