@@ -6,12 +6,11 @@ const CONFIG = {
   gameUrl: 'https://poki.com/en/g/blast-buddies', // the logo links here
   languages: [['en','English'],['es','Español'],['fr','Français'],['de','Deutsch'],['pt','Português']]
 };
+// Daily, weekly, ranked seasons, clans and clan history all live on ONE page (daily-rankings.html), so the
+// pages share a single API request. Its id stays 'daily' (the page's data-page) so the icon and highlight keep working.
 const NAV = [
   ['home','Home','index.html'],
-  ['daily','Daily Rankings','daily-rankings.html'],
-  ['weekly','Weekly Rankings','weekly-rankings.html'],
-  ['season',`Ranked Season ${CONFIG.currentSeason}`,'ranked-season.html'],
-  ['clans','Clan Rankings','clan-rankings.html'],
+  ['daily','Rankings','daily-rankings.html'],
   ['league','Clan League','league.html'],
   ['podium','Podium','podium.html'],
   ['compare','Compare','compare.html'],
@@ -23,6 +22,7 @@ const NAV = [
   ['maps','Maps','maps.html'],
   ['weapons','Weapons','weapons.html'],
   ['abilities','Abilities','abilities.html'],
+  ['xp','XP Calculator','xp.html'],
   ['vote','Community Vote','vote.html'],
   ['updates','Updates','updates.html']
 ];
