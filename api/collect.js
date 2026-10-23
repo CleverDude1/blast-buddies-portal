@@ -25,10 +25,14 @@ async function fetchJson(url, tries = 3) {
         signal: ctrl.signal,
         headers: { 'user-agent': 'blast-buddies-collector', 'cache-control': 'no-cache' },
       });
+      if (res.status === 429 || res.status === 503) {   // rate limited / no snapshot: retrying now would not help
+        const err = new Error(`HTTP ${res.status} (retry after ${res.headers.get('Retry-After') || '?'}s)`); err.noRetry = true; throw err;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return { status: res.status, json: await res.json() };
     } catch (e) {
       lastErr = e;
+      if (e.noRetry) break;
       await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
     } finally {
       clearTimeout(timer);
@@ -91,11 +95,12 @@ export default async function handler(req, res) {
       }
       // Same shape the old APIs returned ({ data: { top: [...] } }), so records.js and the diffs don't change.
       // `payload` (full rows) feeds the records step; the copy stored in raw_snapshots drops stats + weaponStats to keep the table small.
-      const payload = { data: { top } };
-      const stored = { data: { top: top.map(({ stats, weaponStats, ...row }) => row) } };
+      // records.js writes "Season N" from payload.season, so the season travels with the payload.
       const season = b.board === 'ranked'
         ? (json.ranked?.current?.season ?? json.metadata?.currentSeason ?? b.season)
         : b.season;
+      const payload = { season, data: { top } };
+      const stored = { season, data: { top: top.map(({ stats, weaponStats, ...row }) => row) } };
 
       if (STORE_RAW) {
         const { error } = await db.from('raw_snapshots').insert({
