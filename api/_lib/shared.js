@@ -1,16 +1,17 @@
 // Helpers shared by api/compare.js and api/hourly.js (files starting with "_" are not public endpoints).
-import { SOURCES } from '../_sources/index.js';   // same source list the hourly collector uses
+import { BOARDS, RANKED_SEASON as SOURCES_SEASON } from '../_sources/index.js';   // board names the hourly collector stores snapshots under
 
 export const DAY = 864e5;
 export const ID_RE = /^[A-Za-z0-9_-]{4,40}$/;
 const BASE = process.env.API_BASE_URL || 'https://blast-buddies-portal.vercel.app';
-const srcOf = board => (Array.isArray(SOURCES) ? SOURCES : []).find(s => s?.type === 'leaderboard' && s?.board === board);
-export const RANKED_SEASON = Number(srcOf('ranked')?.season ?? process.env.RANKED_SEASON ?? 3);   // change when a new ranked season starts
+const srcOf = board => (Array.isArray(BOARDS) ? BOARDS : []).find(s => s?.type === 'leaderboard' && s?.board === board);
+export const RANKED_SEASON = Number(srcOf('ranked')?.season ?? SOURCES_SEASON ?? process.env.RANKED_SEASON ?? 3);   // change when a new ranked season starts
+// NOTE: these are the NAMES snapshots are stored under (raw_snapshots.url), not addresses that get fetched any more.
 export const URLS = {
   day:    srcOf('day')?.url    || `${BASE}/api/leaderboard-day`,
   week:   srcOf('week')?.url   || `${BASE}/api/leaderboard-week`,
   ranked: srcOf('ranked')?.url || `${BASE}/api/leaderboard-ranked?season=${RANKED_SEASON}`,
-  clan:   (Array.isArray(SOURCES) ? SOURCES : []).find(s => s?.type === 'clans')?.url || `${BASE}/api/clan`,
+  clan:   (Array.isArray(BOARDS) ? BOARDS : []).find(s => s?.type === 'clans')?.url || `${BASE}/api/clan`,
 };
 
 // PostgREST helper. `all` pages through results (Supabase returns max 1000 rows per request).
@@ -35,6 +36,8 @@ export const inList = ids => `in.(${ids.join(',')})`;
 export const since = days => encodeURIComponent(new Date(Date.now() - days * DAY).toISOString());
 
 // ---------- live API (primary source) ----------
+// Only kept for any old code that still imports it. The old per-board APIs are gone and the Pangolin API allows
+// 1 request per 5 minutes per IP, so nothing in the site should call this on a visitor's request: read raw_snapshots instead.
 export async function fetchLive(url) {
   let last;
   for (let i = 0; i < 2; i++) {
@@ -60,4 +63,3 @@ export const normPlayer = (e, i) => ({ player_id: e.playerId, rank: i == null ? 
   trophies: e.trophies, ranked_wins: e.rankedWins, ranked_losses: e.rankedLosses, total_xp: e.totalXp, top_weapon_id: e.topWeaponId,
   clan_tag: e.clanTag, clan_color: e.clanColor });
 export const normClan = e => ({ clan_id: e.clanId, name: e.name, tag: e.tag, color: e.color, member_count: e.memberCount, member_cap: e.memberCap, open_join: e.openJoin, kills: e.kills });
-
