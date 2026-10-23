@@ -25,6 +25,15 @@
 .wp-row small{color:var(--muted);font-weight:600}
 .wp-bar{height:6px;border-radius:4px;background:#050704;margin-top:5px;overflow:hidden}
 .wp-bar i{display:block;height:100%;background:linear-gradient(90deg,#d9921f,#ffd24d)}
+/* weapon stats in the details popup */
+.ws-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:4px 0 12px}
+.ws-grid div{background:var(--card2,#1b2214);border-radius:10px;padding:8px 10px;font-size:12px;color:var(--muted)}
+.ws-grid b{display:block;font-size:15px;color:var(--text,#fff);margin-top:2px}
+.ws-table{width:100%;border-collapse:collapse;font-size:13px;margin:4px 0 8px}
+.ws-table th{color:var(--muted);font-weight:600;text-align:right;padding:4px 8px}
+.ws-table td{text-align:right;padding:4px 8px;border-top:1px solid var(--line)}
+.ws-table th:first-child,.ws-table td:first-child{text-align:left}
+.ws-note{font-size:12px;color:var(--muted);margin:0 0 8px}
 </style>
 </head>
 <body data-page="weapons">
@@ -48,7 +57,8 @@
 </template>
 
 <script src="js/layout.js"></script>
-<script src="js/weapon-names.js"></script>
+<script src="js/weapon-names.js"></script>  <!-- defines BB_WEAPONS and BB_WEAPON_LABELS -->
+<script src="js/weapon-data.js"></script>   <!-- defines BB_WEAPON_STATS (offline catalog stats) -->
 <script>
 // Names must match the image file names in images/weapons (e.g. images/weapons/Assault.png)
 const IMG_EXT = 'png';
@@ -58,21 +68,23 @@ const WEAPONS = [
   ['Grenades',  ['BlackHole','Flashbang','Frag','Inferno','Shockwave','Smoke','Storm','Updraft','Warp']]
 ];
 
-// Fill in details later, e.g.  Assault: '<p>Damage: ...</p>'
+// Fill in details later, e.g.  Assault: '<p>Damage: ...</p>'  (shown under the catalog stats)
 const INFO = {};
 
 const API_VOTE = '/api/hourly?mode=vote';          // community tier list results
 const API_POP = '/api/stats?mode=weapons';         // main weapon of the top-50 players (daily, weekly, ranked): { guns: { day: { total, list: [{ id, count }] }, ... } }
 const CAT_KEY = { Primary: 'primary', Secondary: 'secondary', Grenades: 'grenades' };
 const BOARD_LABEL = { day: 'Daily', week: 'Weekly', ranked: 'Ranked' };
-// topWeaponId -> name. Uses js/weapon-names.js when loaded; the built-in copy keeps names working if that script is missing.
-const WEAPON_NAMES = window.BB_WEAPONS || { 1: 'Assault', 2: 'Burst', 3: 'Shotgun', 4: 'MAC-10', 5: 'Lmg', 6: 'Sniper', 7: 'UMP-45', 9: 'RayGun', 10: 'Energy', 11: 'UMP-45', 12: 'Thompson', 15: 'Bow', 101: 'Knife' };
+// topWeaponId -> image name. Comes from js/weapon-names.js; the built-in copy keeps names working if that script is missing.
+const WEAPON_NAMES = window.BB_WEAPONS || { 1: 'Assault', 2: 'Burst', 3: 'Shotgun', 4: 'MAC-10', 5: 'Lmg', 6: 'Sniper', 7: 'Pistol', 8: 'Revolver', 9: 'RayGun', 10: 'Energy', 11: 'UMP-45', 12: 'Thompson', 13: 'Flare', 14: 'Snare', 15: 'Bow', 101: 'Knife' };
+const STATS = window.BB_WEAPON_STATS || {};
 let tiers = {}, pop = null;                        // tiers['Primary/Assault'] = { tier, avg };  pop = { counts, total, top }
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const wImg = n => `images/weapons/${n}.${IMG_EXT}`;
 const wName = id => WEAPON_NAMES[id] || 'Weapon ' + id;
+const wLabel = n => STATS[n]?.name || n;           // in-game name (SMG, Spectre, Tommy ...) for display
 const wImgById = id => wImg(WEAPON_NAMES[id] || id);
 const fallback = `this.onerror=null;this.src='images/placeholder.png'`;
 
@@ -82,8 +94,8 @@ $('weaponSections').innerHTML = WEAPONS.map(([cat, list]) => `
     <div class="weapon-grid">
       ${list.map(n => `
         <button class="weapon-tile" data-name="${n}" data-cat="${cat}">
-          <img src="${wImg(n)}" alt="${n}" onerror="${fallback}">
-          <span>${n}</span>
+          <img src="${wImg(n)}" alt="${esc(wLabel(n))}" onerror="${fallback}">
+          <span>${esc(wLabel(n))}</span>
         </button>`).join('')}
     </div>
   </section>`).join('');
@@ -124,7 +136,7 @@ function popPanel(g) {
     if (!list.length) return '';
     return `<div class="wp-col"><h4>${label}</h4>${list.map((w, i) => `<div class="wp-row" data-name="${esc(wName(w.id))}">
         <b>${i + 1}</b><img src="${esc(wImgById(w.id))}" alt="" onerror="${fallback}">
-        <div><div class="t"><span>${esc(wName(w.id))}</span><small>${w.count} of ${x.total}</small></div>
+        <div><div class="t"><span>${esc(wLabel(wName(w.id)))}</span><small>${w.count} of ${x.total}</small></div>
         <div class="wp-bar"><i style="width:${x.total ? w.count / x.total * 100 : 0}%"></i></div></div></div>`).join('')}</div>`;
   }).join('');
   if (!cols) return;
@@ -138,15 +150,33 @@ $('popCols').addEventListener('click', e => {
 fetch(API_VOTE).then(r => r.json()).then(d => { if (d.results) { tiers = tierMap(d); badges(); } }).catch(() => {});
 fetch(API_POP).then(r => r.json()).then(d => { if (d.guns) { pop = popMap(d.guns); badges(); popPanel(d.guns); } }).catch(() => {});
 
+// ---------- catalog stats (offline) ----------
+const num = x => String(+Number(x).toFixed(2));
+function statsHtml(s) {
+  const stars = '★'.repeat(s.rarity + 1) + '☆'.repeat(Math.max(0, 3 - s.rarity));
+  const grid = [
+    ['Category', s.category], ['Rarity', `<span title="Rarity ${s.rarity} of 3">${stars}</span>`],
+    ['Magazine', s.mag + (s.pellets ? ` (${s.pellets} pellets/shot)` : '')],
+    ['Reload', s.reload ? num(s.reload) + ' s' : 'None'], ['Fire rate', num(s.fireRate) + ' /s'],
+    ['Movement', '×' + num(s.movement)], ['Scope', s.scope ? 'Yes' : 'No'],
+    ['Headshot', '×' + num(s.crit)], ['Limb shot', '×' + num(s.limb)]
+  ].map(([k, v]) => `<div>${k}<b>${v}</b></div>`).join('');
+  const rows = s.ranges.map(([dist, dmg]) =>
+    `<tr><td>${dist >= 10000 ? 'Any distance' : 'Up to ' + dist}</td><td>${num(dmg)}</td><td>${num(dmg * s.crit)}</td><td>${num(dmg * s.limb)}</td></tr>`).join('');
+  return `<div class="ws-grid">${grid}</div>
+    <table class="ws-table"><tr><th>Range</th><th>Body</th><th>Headshot</th><th>Limb</th></tr>${rows}</table>
+    <p class="ws-note">Damage per hit${s.pellets ? ' (per pellet)' : ''}; it drops as the target gets further away.</p>`;
+}
+
 // ---------- details popup ----------
 const dlg = $('weaponDlg');
 document.querySelectorAll('.weapon-tile').forEach(t => t.onclick = () => {
-  const n = t.dataset.name;
+  const n = t.dataset.name, s = STATS[n];
   const img = $('wdImg');
   img.onerror = () => { img.onerror = null; img.src = 'images/placeholder.png'; };
   img.src = wImg(n);
-  img.alt = n;
-  $('wdName').textContent = n;
+  img.alt = wLabel(n);
+  $('wdName').textContent = wLabel(n);
   $('wdCat').textContent = t.dataset.cat;
   const tr = tiers[t.dataset.cat + '/' + n], c = pop && pop.counts[n];
   $('wdMeta').innerHTML = [
@@ -154,7 +184,7 @@ document.querySelectorAll('.weapon-tile').forEach(t => t.onclick = () => {
     pop && pop.top === n ? '<b>Most popular</b> weapon among top players' : '',
     c ? `Main weapon of ${c} of ${pop.total} players on the top-50 boards` : ''
   ].filter(Boolean).join('<br>');
-  $('wdInfo').innerHTML = INFO[n] || 'More information coming soon.';
+  $('wdInfo').innerHTML = (s ? statsHtml(s) : '') + (INFO[n] || (s ? '' : 'More information coming soon.'));
   dlg.showModal();
 });
 $('weaponClose').onclick = () => dlg.close();
