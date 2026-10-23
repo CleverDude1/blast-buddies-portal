@@ -1,17 +1,71 @@
 // /api/stats  -> everything the Statistics page needs in one call:
-//   level100 (players ever seen at level 100+), records (all-time highs), guns (top-50 weapon counts per board)
-// Every call also checks the live boards against the stored records and replaces any that were beaten.
+//   level100 (players ever seen at level 100+), records (all-time highs), guns (favourite-weapon counts per board),
+//   lifetime (top 3 lifetime kills, top 3 lifetime KDR, top 3 kills with each gun)
+// DATA SOURCE: the old per-board APIs are gone and the Pangolin API only allows 1 request per 5 minutes per IP, so this file never calls
+// it. "Live" data = the newest stored snapshot per board (raw_snapshots, written hourly by api/collect.js). Records are updated by the
+// collector itself, so this file only READS them.
 // /api/stats?mode=sample   -> called by the Supabase cron once an hour (:55) (Bearer secret): runs the clan league tick, stores one online-players sample + updates the all-time peak
 // /api/stats?mode=league   -> the open clan league day + roster (league.html)
-// /api/stats?mode=weapons  -> main weapon of the top-50 players per board (weapons.html)
+// /api/stats?mode=weapons  -> favourite weapon of the players on each board (weapons.html)
 // /api/stats?mode=backfill&key=ADMIN_KEY[&after=ID]  -> one-off: rebuild records + level 100 from stored raw_snapshots
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, STATS_ADMIN_KEY (only for backfill)
-import { URLS, fetchLive } from './_lib/shared.js';
-import { collect, commit, loadStats, weaponCounts, backfill, loadPeak, loadOnline, loadSamples, loadPlayers, backfillPlayers, hourAgo, roomTotals, addOnlineSample, updatePeak } from './_lib/records.js';
+import { rest, extractList } from './_lib/shared.js';
+import { loadStats, backfill, loadPeak, loadOnline, loadSamples, loadPlayers, backfillPlayers, roomTotals, addOnlineSample, updatePeak } from './_lib/records.js';
 import { leagueTick, loadLeague } from './_lib/league.js';
 
 export const config = { maxDuration: 60 };
-const BOARDS = ['day', 'week', 'ranked', 'clan'];
+
+// raw_snapshots.source written by api/collect.js
+const SOURCE = { day: 'leaderboard-day', week: 'leaderboard-week', ranked: 'leaderboard-ranked', clan: 'clan' };
+// how many players per board are counted for "most popular guns" (ranked has 500; rows without a weapon are skipped)
+const GUN_ROWS = { day: 100, week: 100, ranked: 500 };
+// weapon ids with a lifetime "most kills" list (matches js/weapon-names.js; 101 = knife)
+const WEAPON_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 101];
+const enc = encodeURIComponent;
+
+async function latestPayload(board) {
+  const [row] = await rest(`raw_snapshots?select=fetched_at,payload&source=eq.${enc(SOURCE[board])}&order=fetched_at.desc&limit=1`);
+  return row ? { at: Date.parse(row.fetched_at), payload: row.payload } : null;
+}
+
+// main weapon of each player on a board -> { total, list: [{ id, count }] } (total = players that have a weapon on record)
+function gunCounts(payload, max) {
+  const rows = (payload && extractList(payload, 'playerId')) || [], counts = new Map();
+  let total = 0;
+  for (const r of rows.slice(0, max)) {
+    if (r.topWeaponId == null) continue;
+    total++; counts.set(r.topWeaponId, (counts.get(r.topWeaponId) || 0) + 1);
+  }
+  return { total, list: [...counts].map(([id, count]) => ({ id, count })).sort((a, b) => b.count - a.count || a.id - b.id) };
+}
+
+async function gunsFromStored(boards) {
+  const guns = {};
+  await Promise.all(boards.map(async b => {
+    try { const s = await latestPayload(b); guns[b] = s ? gunCounts(s.payload, GUN_ROWS[b]) : { total: 0, list: [] }; }
+    catch (e) { console.error(`guns ${b} failed:`, e.message); guns[b] = { total: 0, list: [] }; }
+  }));
+  return guns;
+}
+
+// top 3 lifetime kills, top 3 lifetime KDR (min 1,000 kills) and top 3 kills with each gun, from player_lifetime / player_weapon_stats.
+// Each list falls back to [] on its own, so the page still works before the tables exist.
+async function loadLifetime() {
+  const cols = 'player_id,name,clan_tag,clan_color,kills,deaths,games,kdr';
+  const safe = p => p.catch(e => { console.error('lifetime query failed:', e.message); return []; });
+  const [kills, kdr, ...perGun] = await Promise.all([
+    safe(rest(`player_lifetime?select=${cols}&order=kills.desc&limit=3`)),
+    safe(rest(`player_lifetime?select=${cols}&kills=gte.1000&order=kdr.desc&limit=3`)),
+    ...WEAPON_IDS.map(id => safe(rest(
+      `player_weapon_stats?select=player_id,kills,headshots,player_lifetime(name,clan_tag,clan_color)&weapon_id=eq.${id}&kills=gt.0&order=kills.desc&limit=3`))),
+  ]);
+  const weapons = {};
+  WEAPON_IDS.forEach((id, i) => {
+    weapons[id] = (perGun[i] || []).map(r => ({ player_id: r.player_id, kills: r.kills, headshots: r.headshots,
+      name: r.player_lifetime?.name ?? r.player_id, clan_tag: r.player_lifetime?.clan_tag ?? '', clan_color: r.player_lifetime?.clan_color ?? null }));
+  });
+  return { kills, kdr, weapons };
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -23,7 +77,10 @@ export default async function handler(req, res) {
       res.setHeader('Cache-Control', 'no-store');
       const at = Date.now();
       let league = null;                            // clan league: runs first so a rooms problem never skips it
-      try { league = await leagueTick(await fetchLive(URLS.clan), at); } catch (e) { console.error('league tick failed:', e.message); league = 'error: ' + e.message; }
+      try {
+        const clans = await latestPayload('clan');  // newest stored clan snapshot (the collector fetches the Pangolin API)
+        league = clans ? await leagueTick(clans.payload, at) : 'no clan snapshot yet';
+      } catch (e) { console.error('league tick failed:', e.message); league = 'error: ' + e.message; }
       const base = process.env.API_BASE_URL || 'https://blast-buddies-portal.vercel.app';
       const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 20000);
       try {
@@ -40,11 +97,8 @@ export default async function handler(req, res) {
       res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
       return res.status(200).json(await loadLeague());
     }
-    if (req.query.mode === 'weapons') {           // Weapons page: main weapon of the top-50 players per board
-      const guns = {};
-      await Promise.all(['day', 'week', 'ranked'].map(async b => {
-        try { guns[b] = weaponCounts(await fetchLive(URLS[b])); } catch (e) { console.error(`weapons ${b} failed:`, e.message); guns[b] = { total: 0, list: [] }; }
-      }));
+    if (req.query.mode === 'weapons') {           // Weapons page: favourite weapon of the players on each board
+      const guns = await gunsFromStored(['day', 'week', 'ranked']);
       res.setHeader('Cache-Control', 'public, s-maxage=600, stale-while-revalidate=1800');
       return res.status(200).json({ guns });
     }
@@ -76,24 +130,16 @@ export default async function handler(req, res) {
       const [samples, peak] = await Promise.all([loadOnline().catch(() => []), loadPeak().catch(() => null)]);
       return res.status(200).json({ samples, peak });
     }
-    const live = {}, now = Date.now();
-    await Promise.all(BOARDS.map(async b => {
-      try { live[b] = await fetchLive(URLS[b]); } catch (e) { console.error(`live ${b} failed:`, e.message); live[b] = null; }
-    }));
-    try {
-      const items = await Promise.all(BOARDS.filter(b => live[b]).map(async b => {
-        let prev = null;
-        try { prev = await hourAgo(URLS[b], now); } catch (e) { console.error(`hour-ago ${b} failed:`, e.message); }
-        return { board: b, payload: live[b], at: now, prevPayload: prev?.payload, prevAt: prev?.at };
-      }));
-      await commit(collect(items), now);
-    }
-    catch (e) { console.error('record update failed:', e.message); }   // still show what is stored
-    const stats = await loadStats(), online = await loadOnline().catch(() => []);
-    const guns = {};
-    for (const b of ['day', 'week', 'ranked']) guns[b] = live[b] ? weaponCounts(live[b]) : { total: 0, list: [] };
+    // main call: records are written by the collector, so this only reads
+    const now = Date.now();
+    const [stats, online, guns, lifetime] = await Promise.all([
+      loadStats(),
+      loadOnline().catch(() => []),
+      gunsFromStored(['day', 'week', 'ranked']),
+      loadLifetime(),
+    ]);
     res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
-    res.status(200).json({ updatedAt: new Date(now).toISOString(), ...stats, online, guns });
+    res.status(200).json({ updatedAt: new Date(now).toISOString(), ...stats, online, guns, lifetime });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
