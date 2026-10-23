@@ -44,7 +44,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const kdrOf = p => p.deaths > 0 ? p.kills / p.deaths : p.kills;
 const fmt = n => Number(n ?? 0).toLocaleString();
 const PH = "this.onerror=null;this.src='images/placeholder.png'";
-const weaponName = id => (window.BB_WEAPONS && window.BB_WEAPONS[id]) || ('Weapon ' + id);
+const weaponName = id => (window.BB_WEAPONS && window.BB_WEAPONS[id]) || ('Weapon ' + id);   // image file name
+const weaponLabel = id => (window.BB_WEAPON_LABELS && window.BB_WEAPON_LABELS[id]) || weaponName(id);   // name shown to players
 const clamp01 = x => Math.max(0, Math.min(1, x));
 
 // mode 'high': higher is better (kills, kdr). mode 'low': lower is better (deaths).
@@ -71,7 +72,7 @@ const simpleStat = (txt, frac, cls, extra = '') =>
 const weaponImg = (id, style = '') => {
   const name = weaponName(id);
   // try images/weapons/<name>.png, then <id>.png, then the placeholder
-  return `<img${style ? ` style="${style}"` : ''} src="images/weapons/${esc(name)}.png" alt="${esc(name)}" title="${esc(name)}" onerror="this.onerror=function(){this.onerror=null;this.src='images/placeholder.png'};this.src='images/weapons/${esc(id)}.png'">`;
+  return `<img${style ? ` style="${style}"` : ''} src="images/weapons/${esc(name)}.png" alt="${esc(weaponLabel(id))}" title="${esc(weaponLabel(id))}" onerror="this.onerror=function(){this.onerror=null;this.src='images/placeholder.png'};this.src='images/weapons/${esc(id)}.png'">`;
 };
 
 // ================= SNAPSHOT (one request, cached) =================
@@ -377,7 +378,7 @@ function renderDetails(el, p) {
         const name = weaponName(w.weaponId);
         const knife = w.weaponId === 101;   // knife has no headshots
         const hs = knife ? '-' : (w.kills ? (w.headshots / w.kills * 100).toFixed(1) + '%' : '-');
-        return `<tr><td style="${S_CELL_L}"><img src="images/weapons/${esc(name)}.png" alt="" title="${esc(name)}" onerror="${PH}" style="height:24px;vertical-align:middle;margin-right:6px">${esc(name)}</td><td style="${S_CELL}">${fmt(w.kills)}</td><td style="${S_CELL}">${knife ? '-' : fmt(w.headshots)}</td><td style="${S_CELL}">${hs}</td></tr>`;
+        return `<tr><td style="${S_CELL_L}"><img src="images/weapons/${esc(name)}.png" alt="" title="${esc(name)}" onerror="${PH}" style="height:24px;vertical-align:middle;margin-right:6px">${esc(weaponLabel(w.weaponId))}</td><td style="${S_CELL}">${fmt(w.kills)}</td><td style="${S_CELL}">${knife ? '-' : fmt(w.headshots)}</td><td style="${S_CELL}">${hs}</td></tr>`;
       }).join('')}
     </table>`);
   }
