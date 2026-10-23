@@ -87,22 +87,62 @@ export function extractList(json) {
   return [];
 }
 
-export function ingestLeaderboard(source, list, players, entries) {
+// Per-player lifetime numbers (stats + weaponStats) change every time someone plays. Keeping them inside every board row would
+// write a new history row per active player per hour, so they go to their own tables (player_lifetime / player_weapon_stats) instead.
+const LIFETIME_KEYS = ['stats', 'weaponStats'];
+
+function toLifetime(raw) {
+  const s = raw.stats;
+  return {
+    p: { player_id: raw.playerId, name: raw.name ?? null, clan_tag: raw.clanTag || null, clan_color: raw.clanColor ?? null,
+         total_xp: raw.totalXp ?? null, kills: Number(s.kills) || 0, deaths: Number(s.deaths) || 0, assists: Number(s.assists) || 0, games: Number(s.games) || 0 },
+    w: (Array.isArray(raw.weaponStats) ? raw.weaponStats : [])
+      .filter(x => x && x.weaponId != null && Number(x.kills) > 0)
+      .map(x => ({ weaponId: x.weaponId, kills: Number(x.kills) || 0, headshots: Number(x.headshots) || 0 })),
+  };
+}
+
+export function ingestLeaderboard(source, list, players, entries, lifetime) {
   list.forEach((raw, idx) => {
     if (!raw || !raw.playerId) return;
     const p = pick(raw, PLAYER_FIELDS);
     // The combined API sends clanTag "" and clanColor null for players without a clan.
     if (p.clan_tag === '') p.clan_tag = null;
     players.set(raw.playerId, { ...players.get(raw.playerId), ...p });
+    const extra = leftovers(raw, PLAYER_FIELDS, ENTRY_FIELDS);
+    for (const k of LIFETIME_KEYS) delete extra[k];
     entries.push({
       board: source.board,
       season: source.season,
       player_id: raw.playerId,
       ...pick(raw, ENTRY_FIELDS),
       rank: raw.rank ?? idx + 1,
-      extra: leftovers(raw, PLAYER_FIELDS, ENTRY_FIELDS),
+      extra,
     });
+    // the same player can be on several boards: keep the row with the most lifetime kills (the freshest)
+    if (lifetime && raw.stats && typeof raw.stats === 'object') {
+      const prev = lifetime.get(raw.playerId);
+      if (!prev || (Number(raw.stats.kills) || 0) >= prev.p.kills) lifetime.set(raw.playerId, toLifetime(raw));
+    }
   });
+}
+
+// Upserts lifetime totals + per-weapon kills. Needs the two tables from sql/player_stats.sql.
+export async function saveLifetime(db, lifetime, now) {
+  const players = [], weapons = [];
+  for (const { p, w } of lifetime.values()) {
+    players.push({ ...p, updated_at: now });
+    for (const x of w) weapons.push({ player_id: p.player_id, weapon_id: x.weaponId, kills: x.kills, headshots: x.headshots, updated_at: now });
+  }
+  for (const batch of chunk(players, 500)) {
+    const { error } = await db.from('player_lifetime').upsert(batch, { onConflict: 'player_id' });
+    if (error) throw new Error(`player_lifetime upsert: ${error.message}`);
+  }
+  for (const batch of chunk(weapons, 1000)) {   // after the players above: weapon rows point at player_lifetime
+    const { error } = await db.from('player_weapon_stats').upsert(batch, { onConflict: 'player_id,weapon_id' });
+    if (error) throw new Error(`player_weapon_stats upsert: ${error.message}`);
+  }
+  return { players: players.length, weapons: weapons.length };
 }
 
 export function ingestClans(list, clans) {
