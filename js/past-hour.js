@@ -8,8 +8,10 @@
   const signed = n => (n > 0 ? '+' : n < 0 ? '-' : '') + fmt(Math.abs(n));
   const utc = iso => new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
   const todayStr = () => new Date().toISOString().slice(0, 10);
-  const SPANS = ['hour', 'day', 'week'];
-  const getSpan = () => { try { const s = localStorage.getItem('hrSpan'); return s === 'day' || s === 'week' ? s : 'hour'; } catch (e) { return 'hour'; } };
+  const SPANS = ['hour', 'day', 'week', 'month'];
+  const getSpan = () => { try { const s = localStorage.getItem('hrSpan'); return s === 'day' || s === 'week' || s === 'month' ? s : 'hour'; } catch (e) { return 'hour'; } };
+  const longSpan = () => span === 'week' || span === 'month';
+  const nDays = () => span === 'month' ? 30 : 7;
 
   const q = new URLSearchParams(location.search);
   if (SPANS.includes(q.get('span'))) { try { localStorage.setItem('hrSpan', q.get('span')); } catch (e) {} }
@@ -31,10 +33,11 @@
     document.querySelectorAll('#phTabs button').forEach(b => b.classList.toggle('on', b.dataset.b === cur));
     document.querySelectorAll('#phSpan button').forEach(b => b.classList.toggle('on', b.dataset.span === span));
     $('phDateWrap').style.display = span !== 'hour' ? '' : 'none';
-    const lbl = $('phDateLbl'); if (lbl) lbl.textContent = span === 'week' ? 'Week ending' : 'Day';
+    const lbl = $('phDateLbl'); if (lbl) lbl.textContent = span === 'month' ? 'Month ending' : span === 'week' ? 'Week ending' : 'Day';
     $('phDate').value = date || todayStr(); $('phDate').max = todayStr();
     const past = date && date !== todayStr();
     $('phTitle').textContent = span === 'hour' ? 'Past hour'
+      : span === 'month' ? (past ? `30 days ending ${date}` : 'Last 30 days')
       : span === 'week' ? (past ? `Week ending ${date}` : 'Last 7 days')
       : (past ? `Day: ${date}` : 'Last day');
     const none = t => { $('phStats').innerHTML = ''; $('phPower').innerHTML = ''; $('phRows').innerHTML = msg(t); $('phChart').innerHTML = ''; $('phLegend').innerHTML = ''; $('phGraphNote').textContent = ''; };
@@ -43,13 +46,14 @@
     const b = data.boards[cur], who = cur === 'clan' ? 'clans' : 'players';
     if (!b || !b.ok) return none(span === 'day' ? 'No stored snapshots for this day yet.'
       : span === 'week' ? 'No stored snapshots for this week yet.'
+      : span === 'month' ? 'No stored snapshots for this month yet.'
       : 'No hourly data for this board yet. It needs a stored snapshot from about an hour ago.');
 
     $('phWhen').textContent = span === 'hour'
       ? `Live values compared with the snapshot from ${utc(b.at)} (${b.elapsedMin} min ago).`
-      : span === 'week'
-        ? (b.live ? `Stored snapshots over the last 7 days (${b.snapshots} used, first at ${utc(b.at)}) plus the live values.`
-                  : `Stored snapshots for the 7 days ending ${date} (${b.snapshots} used).`)
+      : longSpan()
+        ? (b.live ? `Stored snapshots over the last ${nDays()} days (${b.snapshots} used, first at ${utc(b.at)}) plus the live values.`
+                  : `Stored snapshots for the ${nDays()} days ending ${date} (${b.snapshots} used).`)
         : (b.live ? `Every stored snapshot since 00:00 UTC (${b.snapshots} so far, first at ${utc(b.at)}) plus the live values.`
                   : `Every stored snapshot from 00:00 to 00:00 UTC on ${date} (${b.snapshots}).`);
     $('phGainHead').textContent = b.unit.charAt(0).toUpperCase() + b.unit.slice(1) + ' gained';
@@ -82,8 +86,8 @@
     $('phGraphTitle').textContent = `${cur === 'clan' ? 'Clans' : 'Players'} that changed (${S.length})`;
     $('phGraphNote').textContent = span === 'day' && cur === 'day'
       ? `Each line is a player's kills since 00:00 UTC, one point per stored snapshot. Hover a line to see who it is.`
-      : span === 'week'
-        ? `Each line is the running total of ${b.unit} gained over the last 7 days, one point per sampled snapshot. Hover a line to see who it is.`
+      : longSpan()
+        ? `Each line is the running total of ${b.unit} gained over the last ${nDays()} days, one point per sampled snapshot. Hover a line to see who it is.`
         : `Each line is the running total of ${b.unit} gained since the start of the period, one point per stored snapshot. Hover a line to see who it is.`;
     if (!S.length) { el.innerHTML = '<div class="chart-empty">No changes to plot for this period.</div>'; leg.innerHTML = ''; return; }
     const t0 = Date.parse(b.at), t1 = Math.max(Date.parse(b.to), t0 + 1);
@@ -95,7 +99,7 @@
     g += `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="#555f48"/>`;
     g += Array.from({ length: 6 }, (_, i) => { const t = t0 + (t1 - t0) * i / 5; return `<text x="${X(t)}" y="${H - 10}" text-anchor="middle">${xl(t)}</text>`; }).join('');
     g += S.map((s, i) => `<path data-i="${i}" d="${s.pts.map((p, j) => (j ? 'L' : 'M') + X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join(' ')}" fill="none" stroke="${color(i)}" stroke-width="1.8" stroke-linejoin="round" opacity=".9"/>`).join('');
-    // a week has many points per line: skip the dots when there are lots (the hover still snaps to the nearest point)
+    // a week or month has many points per line: skip the dots when there are lots (the hover still snaps to the nearest point)
     const totalPts = S.reduce((n, s) => n + s.pts.length, 0);
     if (totalPts < 1500) g += S.map((s, i) => s.pts.map(p => `<circle data-i="${i}" cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="2.2" fill="${color(i)}"/>`).join('')).join('');
     el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img">${g}</svg><div class="ph-tip" style="display:none"></div>`;
@@ -107,7 +111,7 @@
       svg.querySelectorAll('circle').forEach(c => c.classList.toggle('dim', i != null && +c.dataset.i !== i));
       leg.querySelectorAll('span').forEach(sp => sp.classList.toggle('on', i != null && +sp.dataset.i === i));
     };
-    const tfmt = t => span === 'week' ? new Date(t).toISOString().slice(5, 16).replace('T', ' ') + ' UTC' : new Date(t).toISOString().slice(11, 16) + ' UTC';
+    const tfmt = t => longSpan() ? new Date(t).toISOString().slice(5, 16).replace('T', ' ') + ' UTC' : new Date(t).toISOString().slice(11, 16) + ' UTC';
     svg.addEventListener('mousemove', e => {
       const rc = svg.getBoundingClientRect(), mx = (e.clientX - rc.left) * W / rc.width, my = (e.clientY - rc.top) * H / rc.height;
       let best = null, bd = 20 * 20;
