@@ -6,6 +6,7 @@ import { SOURCES, BOARDS } from './_sources/index.js';
 import {
   ingestLeaderboard,
   ingestClans,
+  saveLifetime,
   syncEntities,
   PLAYER_TRACKED,
   ENTRY_TRACKED,
@@ -63,6 +64,7 @@ export default async function handler(req, res) {
   // 2. Cut it into boards, store raw slices, ingest
   const players = new Map();
   const clans = new Map();
+  const lifetime = new Map();   // playerId -> lifetime stats + per-weapon kills (saved to player_lifetime / player_weapon_stats)
   const entriesBySource = [];
   const boards = []; // used by the records step
   let fetchedOk = 0;
@@ -88,14 +90,16 @@ export default async function handler(req, res) {
         continue;
       }
       // Same shape the old APIs returned ({ data: { top: [...] } }), so records.js and the diffs don't change.
+      // `payload` (full rows) feeds the records step; the copy stored in raw_snapshots drops stats + weaponStats to keep the table small.
       const payload = { data: { top } };
+      const stored = { data: { top: top.map(({ stats, weaponStats, ...row }) => row) } };
       const season = b.board === 'ranked'
         ? (json.ranked?.current?.season ?? json.metadata?.currentSeason ?? b.season)
         : b.season;
 
       if (STORE_RAW) {
         const { error } = await db.from('raw_snapshots').insert({
-          run_id: run.id, source: b.key, url: b.url, http_status: status, fetched_at: now, payload,
+          run_id: run.id, source: b.key, url: b.url, http_status: status, fetched_at: now, payload: stored,
         });
         if (error) errors.push({ source: b.key, step: 'raw', error: error.message });
       }
@@ -106,7 +110,7 @@ export default async function handler(req, res) {
       if (b.type === 'leaderboard') {
         const entries = [];
         const src = { key: b.key, board: b.board, season };
-        ingestLeaderboard(src, top, players, entries);
+        ingestLeaderboard(src, top, players, entries, lifetime);
         entriesBySource.push({ s: src, entries });
       } else {
         ingestClans(top, clans);
@@ -125,6 +129,8 @@ export default async function handler(req, res) {
       table: 'players', historyTable: 'player_history', keyCols: ['player_id'],
       tracked: PLAYER_TRACKED, rows: [...players.values()], runId: run.id, now,
     }));
+
+  await step('lifetime', () => saveLifetime(db, lifetime, now));
 
   for (const { s, entries } of entriesBySource) {
     await step(`board:${s.key}`, () =>
