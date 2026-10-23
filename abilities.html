@@ -1,18 +1,84 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Abilities | Blast Buddies Tracker</title>
-<link rel="icon" href="images/logo.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
+<title>Abilities – Blast Buddies Tracker</title>
+<link rel="icon" href="images/icons/home.png">
 <link rel="stylesheet" href="css/style.css">
+<style>
+.weapon-tile{position:relative}
+.ab-b{position:absolute;top:6px;font-style:normal;font-weight:800;line-height:1}
+.ab-lvl{left:6px;min-width:22px;height:22px;padding:0 6px;display:flex;align-items:center;justify-content:center;border-radius:7px;font-size:11px;color:#10150c;background:#a3e36f;white-space:nowrap}
+.ab-lvl.locked{background:#ffe066}
+.ab-chg{right:6px;font-size:10px;padding:3px 7px;border-radius:999px;background:var(--gold);color:#10150c;white-space:nowrap}
+.ab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:10px 0 12px}
+.ab-grid div{background:var(--card2,#1b2214);border-radius:10px;padding:8px 10px;font-size:12px;color:var(--muted)}
+.ab-grid b{display:block;font-size:15px;color:var(--text,#fff);margin-top:2px}
+.ab-desc{font-size:15px;line-height:1.5;margin:8px 0}
+</style>
 </head>
 <body data-page="abilities">
+
 <template id="page-content">
-<section class="panel"><h1 class="page-title">Abilities</h1><p class="muted">Every ability and its stats. Coming soon.</p></section>
+  <section class="panel weapon-panel">
+    <h3>Abilities</h3>
+    <p class="muted">Tap an ability for its cooldown, duration and unlock level.</p>
+    <div class="weapon-grid" id="abilityGrid"></div>
+  </section>
+
+  <dialog id="abDlg">
+    <button class="pill dlg-close" id="abClose">Close</button>
+    <img class="wdlg-img" id="abImg" alt="">
+    <h3 id="abName"></h3>
+    <div class="map-sub" id="abSub"></div>
+    <p class="ab-desc" id="abDesc"></p>
+    <div class="ab-grid" id="abStats"></div>
+  </dialog>
 </template>
+
 <script src="js/layout.js"></script>
+<script src="js/ability-data.js"></script>  <!-- defines BB_ABILITIES (offline) -->
+<script>
+// Images: images/abilities/<ability name>.png   (same name as the game, e.g. "Pulse Scan.png")
+const IMG_EXT = 'png';
+const ABILITIES = window.BB_ABILITIES || [];
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const aImg = a => `images/abilities/${encodeURIComponent(a.name)}.${IMG_EXT}`;
+const fallback = `this.onerror=null;this.src='images/placeholder.png'`;
+const num = x => String(+Number(x).toFixed(2));
+
+$('abilityGrid').innerHTML = ABILITIES.map(a => `
+  <button class="weapon-tile" data-id="${a.id}">
+    <b class="ab-b ab-lvl${a.levelRequired > 1 ? ' locked' : ''}" title="Unlocked at level ${a.levelRequired}">Lv ${a.levelRequired}</b>
+    ${a.maxCharges > 1 ? `<em class="ab-b ab-chg" title="Stores ${a.maxCharges} charges">${a.maxCharges} charges</em>` : ''}
+    <img src="${aImg(a)}" alt="${esc(a.name)}" onerror="${fallback}">
+    <span>${esc(a.name)}</span>
+  </button>`).join('') || '<p class="muted">No abilities found.</p>';
+
+const dlg = $('abDlg');
+$('abilityGrid').addEventListener('click', e => {
+  const t = e.target.closest('.weapon-tile'); if (!t) return;
+  const a = ABILITIES.find(x => String(x.id) === t.dataset.id); if (!a) return;
+  const img = $('abImg');
+  img.onerror = () => { img.onerror = null; img.src = 'images/placeholder.png'; };
+  img.src = aImg(a);
+  img.alt = a.name;
+  $('abName').textContent = a.name;
+  $('abSub').textContent = a.levelRequired > 1 ? `Unlocks at level ${a.levelRequired}` : 'Available from the start';
+  $('abDesc').textContent = a.description;
+  $('abStats').innerHTML = [
+    ['Cooldown', num(a.cooldown) + ' s'],
+    ['Duration', num(a.duration) + ' s'],
+    ['Charges', a.maxCharges],
+    ['Unlock level', a.levelRequired]
+  ].map(([k, v]) => `<div>${k}<b>${esc(v)}</b></div>`).join('');
+  dlg.showModal();
+});
+$('abClose').onclick = () => dlg.close();
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+</script>
 </body>
 </html>
