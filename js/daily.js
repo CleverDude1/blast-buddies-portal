@@ -68,10 +68,10 @@ function statCell(valueText, c, mode, cls, dl = '') {
 // Plain stat cell with a bar (used by the ranked and clan views)
 const simpleStat = (txt, frac, cls, extra = '') =>
   `<div class="stat"><div class="top"><span>${txt}</span>${extra}</div><div class="bar ${cls}"><i style="width:${(clamp01(frac) * 100).toFixed(1)}%"></i></div></div>`;
-const weaponImg = id => {
+const weaponImg = (id, style = '') => {
   const name = weaponName(id);
   // try images/weapons/<name>.png, then <id>.png, then the placeholder
-  return `<img src="images/weapons/${esc(name)}.png" alt="${esc(name)}" title="${esc(name)}" onerror="this.onerror=function(){this.onerror=null;this.src='images/placeholder.png'};this.src='images/weapons/${esc(id)}.png'">`;
+  return `<img${style ? ` style="${style}"` : ''} src="images/weapons/${esc(name)}.png" alt="${esc(name)}" title="${esc(name)}" onerror="this.onerror=function(){this.onerror=null;this.src='images/placeholder.png'};this.src='images/weapons/${esc(id)}.png'">`;
 };
 
 // ================= SNAPSHOT (one request, cached) =================
@@ -109,6 +109,17 @@ function rankedSeasons(d) {   // newest first; seasons the API marks available:f
   return [...out.values()].sort((a, b) => b.season - a.season);
 }
 
+// Clan history: the API keeps the top 20 clans of each previous month, with every member's kills.
+function clanArchives(d) {   // newest month first
+  const a = d?.clans?.archives || d?.clanArchives || [];
+  return a.filter(m => m && m.period && rowsOf(m).length).sort((x, y) => String(y.period).localeCompare(String(x.period)));
+}
+function monthLabel(period) {
+  const [y, m] = String(period).split('-').map(Number);
+  if (!y || !m) return String(period);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
 // playerId -> a row that has full details (stats / weapons / seasons), so slim ranked rows can borrow them
 let detail = new Map();
 function buildDetail() {
@@ -134,20 +145,30 @@ const levelOf = p => p.totalXp != null ? xpToLevel(p.totalXp) : (p.level ?? null
 // ================= VIEW STATE =================
 let view = { type: 'daily', season: null };
 let rows = [], hmToken = 0;
-const keyOf = v => v.type === 'ranked' ? 'ranked-' + v.season : v.type;
+const keyOf = v => v.type === 'ranked' ? 'ranked-' + v.season : v.type === 'history' ? 'history-' + v.period : v.type;
 function parseKey(k) {
   if (k === 'daily' || k === 'weekly' || k === 'clans') return { type: k, season: null };
-  const m = /^ranked-(\d+)$/.exec(k || '');
+  let m = /^ranked-(\d+)$/.exec(k || '');
   if (m && rankedSeasons(snap).some(s => s.season === Number(m[1]))) return { type: 'ranked', season: Number(m[1]) };
+  m = /^history-(\d{4}-\d{2})$/.exec(k || '');
+  if (m && clanArchives(snap).some(a => a.period === m[1])) return { type: 'history', period: m[1] };
   return null;
 }
 const boardName = () => view.type === 'weekly' ? 'week' : 'day';
 
 function renderTabs() {
+  const archives = clanArchives(snap);
   const tabs = [['daily', 'Daily'], ['weekly', 'Weekly'],
-    ...rankedSeasons(snap).map(s => ['ranked-' + s.season, 'Ranked S' + s.season]), ['clans', 'Clans']];
-  $('tabs').innerHTML = tabs.map(([k, l]) =>
-    `<button class="pill" data-k="${k}" style="${k === keyOf(view) ? 'outline:2px solid currentColor' : 'opacity:.65'}">${l}</button>`).join('');
+    ...rankedSeasons(snap).map(s => ['ranked-' + s.season, 'Ranked S' + s.season]), ['clans', 'Clans'],
+    ...(archives.length ? [['history-' + archives[0].period, 'Clan History']] : [])];
+  const active = k => view.type === 'history' ? k.startsWith('history-') : k === keyOf(view);
+  let html = tabs.map(([k, l]) =>
+    `<button class="pill" data-k="${k}" style="${active(k) ? 'outline:2px solid currentColor' : 'opacity:.65'}">${l}</button>`).join('');
+  if (view.type === 'history') {
+    html += `<select id="month" class="pill" aria-label="Month">${archives.map(a =>
+      `<option value="history-${esc(a.period)}"${a.period === view.period ? ' selected' : ''}>${esc(monthLabel(a.period))}</option>`).join('')}</select>`;
+  }
+  $('tabs').innerHTML = html;
 }
 $('tabs').addEventListener('click', e => {
   const b = e.target.closest('[data-k]'); if (!b) return;
@@ -155,15 +176,25 @@ $('tabs').addEventListener('click', e => {
   history.replaceState(null, '', '#' + b.dataset.k);
   setView(v);
 });
+$('tabs').addEventListener('change', e => {
+  if (e.target.id !== 'month') return;
+  const v = parseKey(e.target.value); if (!v) return;
+  history.replaceState(null, '', '#' + e.target.value);
+  setView(v);
+});
 
 function renderHead() {
   const icon = (src, t) => `<img src="images/icons/${src}.png" alt="${t}" title="${t}">`;
   const txt = t => `<span style="text-align:center">${t}</span>`;
   let h;
+  $('head').className = 'lb-row lb-head' + (view.type === 'clans' || view.type === 'history' ? ' cl-row' : '');
   if (view.type === 'ranked') {
-    h = [txt('#'), '<span>Nickname</span>', icon('col-lvl', 'Level'), txt('Trophies'), txt('Wins'), txt('Losses'), icon('col-weapon', 'Top weapon'), icon('col-clan', 'Clan'), '<span></span>'];
+    h = [txt('#'), '<span>Nickname</span>', icon('col-lvl', 'Level'), icon('col-trophies', 'Trophies'), icon('col-wins', 'Wins'), icon('col-losses', 'Losses'), icon('col-weapon', 'Top weapon'), icon('col-clan', 'Clan'), '<span></span>'];
   } else if (view.type === 'clans') {
-    h = [txt('#'), '<span>Clan</span>', txt('Members'), icon('col-kills', 'Kills'), txt('Join'), txt('Kills / member'), '<span></span>', icon('col-clan', 'Tag'), '<span></span>'];
+    h = [txt('#'), '<span>Clan</span>', icon('col-kills', 'Kills'), icon('col-members', 'Members'), icon('col-clan', 'Tag'),
+      `<img src="images/icons/col-status.png" alt="Join status" title="Open / closed to join">`, '<span></span>'];
+  } else if (view.type === 'history') {
+    h = [txt('#'), '<span>Clan</span>', icon('col-kills', 'Kills'), icon('col-members', 'Members'), icon('col-clan', 'Tag'), '<span></span>', '<span></span>'];
   } else {
     h = [txt('#'), '<span>Nickname</span>', icon('col-lvl', 'Level'), icon('col-kills', 'Kills'), icon('col-deaths', 'Deaths'), icon('col-kdr', 'KDR'), icon('col-weapon', 'Top weapon'), icon('col-clan', 'Clan'), '<span></span>'];
   }
@@ -189,6 +220,10 @@ async function buildRows() {
       const p = fill(raw, isCurrent);
       return { rank: raw.rank ?? i + 1, p, level: levelOf(p), color: p.clanColor };
     });
+  }
+  if (view.type === 'history') {
+    const month = clanArchives(snap).find(a => a.period === view.period);
+    return rowsOf(month).map((c, i) => ({ rank: c.rank ?? i + 1, c, color: c.color }));
   }
   return listOf(snap.clans).slice(0, BOARD_N).map((c, i) => ({ rank: c.rank ?? i + 1, c, color: c.color }));
 }
@@ -219,12 +254,16 @@ async function applyHourly() {
   }
   const el = $('clanPower');
   if (el && window.CLANPOWER) {
-    CLANPOWER.render(el, isBoard && rows.length ? CLANPOWER.top3(rows.map(r => ({ tag: r.p.clanTag, color: r.p.clanColor, score: r.p.kills }))) : [], 'kills', CLAN_COLORS);
+    let power = [];
+    if (isBoard && rows.length) power = CLANPOWER.top3(rows.map(r => ({ tag: r.p.clanTag, color: r.p.clanColor, score: r.p.kills })));
+    else if ((view.type === 'clans' || view.type === 'history') && rows.length) power = CLANPOWER.top3(rows.map(r => ({ tag: r.c.tag, color: r.c.color, score: r.c.kills })));
+    CLANPOWER.render(el, power, 'kills', CLAN_COLORS);
   }
 
   if (view.type === 'daily') status = `Top ${rows.length} players today.` + HOURLY.note(hm);
   else if (view.type === 'weekly') status = `Top ${rows.length} players this week.` + HOURLY.note(hm);
   else if (view.type === 'ranked') status = `Ranked season ${view.season}: ${rows.length} players.`;
+  else if (view.type === 'history') status = `Top ${rows.length} clans in ${monthLabel(view.period)}. Click the icon on a clan to see every member's kills.`;
   else status = `Top ${rows.length} clans this month.`;
   $('status').innerHTML = status + stamp + esc(snapNote) + (snap.metadata?.stale ? ' <b>Data is stale.</b>' : '');
   render();
@@ -235,22 +274,23 @@ HOURLY.mountToggle(applyHourly);
 function render() {
   const q = $('q').value.trim().toLowerCase();
   let html;
-  if (view.type === 'clans') {
+  if (view.type === 'clans' || view.type === 'history') {
+    const hist = view.type === 'history';
     const list = rows.filter(r => !q || r.c.name.toLowerCase().includes(q) || (r.c.tag || '').toLowerCase().includes(q));
     const maxK = Math.max(1, ...rows.map(r => r.c.kills || 0));
     html = list.map(r => {
       const c = r.c, col = CLAN_COLORS[c.color] || '#ffffff';
-      const per = c.memberCount ? Math.round(c.kills / c.memberCount) : 0;
-      return `<div class="lb-row">
+      const members = hist
+        ? simpleStat(`${c.memberCount}`, c.memberCount / 20, 'b-lvl')   // archives have no member cap; clans hold up to 20
+        : simpleStat(`${c.memberCount} / ${c.memberCap}`, c.memberCap ? c.memberCount / c.memberCap : 0, 'b-lvl');
+      return `<div class="lb-row cl-row">
         <span class="rank">${r.rank}</span>
         <span class="pname" style="color:${col}" title="${esc(c.name)}">${esc(c.name)}</span>
-        ${simpleStat(`${c.memberCount} / ${c.memberCap}`, c.memberCap ? c.memberCount / c.memberCap : 0, 'b-lvl')}
         ${simpleStat(fmt(c.kills), c.kills / maxK, 'b-kills')}
-        <span>${c.openJoin ? 'Open' : 'Invite only'}</span>
-        <span>${fmt(per)}</span>
-        <span></span>
+        ${members}
         <span class="clan" style="color:${col}">${esc(c.tag)}</span>
-        <span></span>
+        ${hist ? '<span></span>' : `<span style="color:${c.openJoin ? '#4dff6a' : '#ff4d4d'}">${c.openJoin ? 'Open' : 'Closed'}</span>`}
+        ${hist ? `<button class="inspect" data-clan="${esc(c.clanId)}" aria-label="Members of ${esc(c.name)}"><img src="images/icons/inspect.png" alt="" onerror="${PH}"></button>` : '<span></span>'}
       </div>`;
     }).join('');
   } else if (view.type === 'ranked') {
@@ -345,8 +385,35 @@ function renderDetails(el, p) {
   el.innerHTML = parts.join('') || 'Detailed stats (weapons, lifetime, seasons) are only published for some players. This player is not included.';
 }
 
+// Clan history popup: every member's kills for that month
+function openClan(clanId) {
+  const r = rows.find(x => x.c && x.c.clanId === clanId); if (!r) return;
+  const c = r.c, col = CLAN_COLORS[c.color] || '#ffffff';
+  const members = (c.members || []).slice().sort((a, b) => b.kills - a.kills);
+  const total = c.kills || members.reduce((s, m) => s + (m.kills || 0), 0);
+  $('dlgBody').innerHTML = `<h3 style="color:${col}">${esc(c.name)} [${esc(c.tag)}]</h3>
+    <div class="muted">${esc(monthLabel(view.period))} · rank ${r.rank}</div>
+    <div class="dlg-grid">
+      <div>Total kills<b>${fmt(c.kills)}</b></div><div>Members<b>${fmt(c.memberCount)}</b></div>
+      <div>Avg kills / member<b>${fmt(c.memberCount ? Math.round(c.kills / c.memberCount) : 0)}</b></div>
+    </div>
+    <div class="dlg-section"><table style="${S_TABLE}">
+      <tr><th style="${S_CELL_L}">#</th><th style="${S_CELL_L}">Player</th><th style="${S_CELL}">Level</th><th style="${S_CELL}">Kills</th><th style="${S_CELL}">Share</th><th style="${S_CELL}">Weapon</th></tr>
+      ${members.map((m, i) => `<tr>
+        <td style="${S_CELL_L}">${i + 1}</td>
+        <td style="${S_CELL_L}">${esc(m.name)}${m.isLeader ? ' <span title="Clan leader">👑</span>' : ''}</td>
+        <td style="${S_CELL}">${m.level != null ? esc(m.level) : '-'}</td>
+        <td style="${S_CELL}">${fmt(m.kills)}</td>
+        <td style="${S_CELL}">${total ? (m.kills / total * 100).toFixed(1) + '%' : '-'}</td>
+        <td style="${S_CELL}">${m.topWeaponId != null ? weaponImg(m.topWeaponId, 'height:24px;vertical-align:middle') : ''}</td>
+      </tr>`).join('')}
+    </table></div>`;
+  $('dlg').showModal();
+}
+
 $('rows').addEventListener('click', e => {
   const btn = e.target.closest('.inspect'); if (!btn) return;
+  if (btn.dataset.clan) return openClan(btn.dataset.clan);
   const r = rows.find(x => x.p && x.p.playerId === btn.dataset.id); if (!r) return;
   const p = r.p, g = (p.rankedWins || 0) + (p.rankedLosses || 0);
   let block;
@@ -378,7 +445,7 @@ $('xlsx').onclick = () => {
   if (!window.XLSX) return alert('XLSX library failed to load.');
   const pc = c => c.pct == null ? 'NEW' : +c.pct.toFixed(1);
   let data;
-  if (view.type === 'clans') {
+  if (view.type === 'clans' || view.type === 'history') {
     data = rows.map(r => ({ Rank: r.rank, Clan: r.c.name, Tag: r.c.tag, Members: r.c.memberCount, MemberCap: r.c.memberCap,
       OpenJoin: r.c.openJoin ? 'Yes' : 'No', Kills: r.c.kills }));
   } else if (view.type === 'ranked') {
@@ -390,7 +457,15 @@ $('xlsx').onclick = () => {
       KDR: +r.kdr.toFixed(2), 'KDR vs best %': pc(r.rc), Assists: r.p.assists, WeaponId: r.p.topWeaponId, Clan: r.p.clanTag || '' }));
   }
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), keyOf(view).slice(0, 31));
+  if (view.type === 'history') {
+    data = rows.map(r => ({ Rank: r.rank, Clan: r.c.name, Tag: r.c.tag, Members: r.c.memberCount, Kills: r.c.kills }));
+    const members = rows.flatMap(r => (r.c.members || []).map(m => ({ ClanRank: r.rank, Clan: r.c.name, Tag: r.c.tag,
+      Player: m.name, PlayerId: m.playerId, Level: m.level, Kills: m.kills, Leader: m.isLeader ? 'Yes' : '', WeaponId: m.topWeaponId })));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'Clans');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(members), 'Members');
+  } else {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), keyOf(view).slice(0, 31));
+  }
   XLSX.writeFile(wb, `blast-buddies-${keyOf(view)}-${new Date().toISOString().slice(0, 10)}.xlsx`);
 };
 
