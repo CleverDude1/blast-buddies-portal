@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XP Calculator – Blast Buddies Tracker</title>
+<link rel="icon" href="images/icons/home.png">
+<link rel="stylesheet" href="css/style.css">
+<style>
+.xp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.xp-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.xp-card h3{margin:0 0 4px}
+.xp-card label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+.xp-card input{width:100%;box-sizing:border-box}
+.xp-out{margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.xp-out div{background:var(--card2,#1b2214);border-radius:10px;padding:8px 10px;font-size:12px;color:var(--muted)}
+.xp-out b{display:block;font-size:16px;color:var(--text,#fff);margin-top:2px}
+.xp-out .wide{grid-column:1 / -1}
+.xp-bar{height:8px;border-radius:5px;background:#050704;overflow:hidden;margin-top:6px}
+.xp-bar i{display:block;height:100%;background:linear-gradient(90deg,#d9921f,#ffd24d)}
+.xp-err{color:#ff7b7b;font-size:13px;margin-top:10px}
+.xp-table{width:100%;border-collapse:collapse;font-size:13px}
+.xp-table th{color:var(--muted);text-align:right;padding:4px 8px}
+.xp-table td{text-align:right;padding:4px 8px;border-top:1px solid var(--line)}
+.xp-table th:first-child,.xp-table td:first-child{text-align:left}
+details.panel summary{cursor:pointer;font-weight:700}
+</style>
+</head>
+<body data-page="xp">
+
+<template id="page-content">
+  <section class="panel">
+    <h3>XP Calculator</h3>
+    <p class="muted">Works offline: the level table (levels 1 to 100) is stored in the site, no API needed.</p>
+    <div class="xp-cards">
+
+      <div class="xp-card">
+        <h3>XP to level</h3>
+        <label for="a_xp">Total XP</label>
+        <input class="search" id="a_xp" type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 1781450">
+        <div id="a_out"></div>
+      </div>
+
+      <div class="xp-card">
+        <h3>Level to XP</h3>
+        <label for="b_lv">Level (1 to 100)</label>
+        <input class="search" id="b_lv" type="number" min="1" max="100" step="1" inputmode="numeric" placeholder="e.g. 74">
+        <div id="b_out"></div>
+      </div>
+
+      <div class="xp-card">
+        <h3>XP left to a target level</h3>
+        <label for="c_xp">Your current total XP</label>
+        <input class="search" id="c_xp" type="number" min="0" step="1" inputmode="numeric" placeholder="e.g. 1781450">
+        <label for="c_lv">Target level (1 to 100)</label>
+        <input class="search" id="c_lv" type="number" min="1" max="100" step="1" inputmode="numeric" placeholder="e.g. 80">
+        <div id="c_out"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <details class="panel" id="allLevels">
+    <summary>Full level table</summary>
+    <table class="xp-table" id="tbl"></table>
+  </details>
+</template>
+
+<script src="js/layout.js"></script>
+<script src="js/xp-data.js"></script>  <!-- defines BB_XP (offline level table) -->
+<script>
+const $ = id => document.getElementById(id);
+const X = window.BB_XP, MAX = X.maxLevel;
+const fmt = n => Math.round(n).toLocaleString();
+const cell = (k, v, wide) => `<div${wide ? ' class="wide"' : ''}>${k}<b>${v}</b></div>`;
+const read = (id, min, max) => {                       // returns a whole number or null when empty / invalid
+  const raw = $(id).value.trim(); if (raw === '') return null;
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v < min || (max != null && v > max)) return NaN;
+  return Math.floor(v);
+};
+const err = msg => `<div class="xp-err">${msg}</div>`;
+
+// XP -> level
+function calcA() {
+  const xp = read('a_xp', 0); const out = $('a_out');
+  if (xp === null) { out.innerHTML = ''; return; }
+  if (Number.isNaN(xp)) { out.innerHTML = err('Enter a whole number of XP, 0 or more.'); return; }
+  const lv = X.levelFromXp(xp), start = X.xpForLevel(lv);
+  if (lv >= MAX) {
+    out.innerHTML = `<div class="xp-out">${cell('Level', MAX + ' (max)')}${cell('XP past level ' + MAX, fmt(xp - start))}</div>`;
+    return;
+  }
+  const next = X.xpForLevel(lv + 1), into = xp - start, need = next - start, pct = into / need * 100;
+  out.innerHTML = `<div class="xp-out">
+    ${cell('Level', lv)}${cell('Next level', lv + 1)}
+    ${cell('XP into this level', fmt(into) + ' / ' + fmt(need))}${cell('XP to next level', fmt(next - xp))}
+    <div class="wide">Progress<b>${pct.toFixed(1)}%</b><div class="xp-bar"><i style="width:${pct}%"></i></div></div>
+    ${cell('XP to max level (' + MAX + ')', fmt(X.xpForLevel(MAX) - xp), true)}
+  </div>`;
+}
+
+// level -> XP
+function calcB() {
+  const lv = read('b_lv', 1, MAX); const out = $('b_out');
+  if (lv === null) { out.innerHTML = ''; return; }
+  if (Number.isNaN(lv)) { out.innerHTML = err(`Enter a level from 1 to ${MAX}.`); return; }
+  const total = X.xpForLevel(lv);
+  out.innerHTML = `<div class="xp-out">
+    ${cell('Total XP to reach level ' + lv, fmt(total), true)}
+    ${lv < MAX ? cell('XP for this level', fmt(X.xpForLevel(lv + 1) - total)) + cell('Total XP for level ' + (lv + 1), fmt(X.xpForLevel(lv + 1))) : cell('Max level', 'No next level', true)}
+  </div>`;
+}
+
+// current XP + target level -> XP left
+function calcC() {
+  const xp = read('c_xp', 0), lv = read('c_lv', 1, MAX); const out = $('c_out');
+  if (xp === null || lv === null) { out.innerHTML = ''; return; }
+  if (Number.isNaN(xp) || Number.isNaN(lv)) { out.innerHTML = err(`Enter XP (0 or more) and a target level from 1 to ${MAX}.`); return; }
+  const cur = X.levelFromXp(xp), target = X.xpForLevel(lv);
+  if (xp >= target) { out.innerHTML = `<div class="xp-out">${cell('Result', 'You are already past level ' + lv + ' (you are level ' + cur + ')', true)}</div>`; return; }
+  const pct = xp / target * 100;
+  out.innerHTML = `<div class="xp-out">
+    ${cell('Your level', cur)}${cell('Target level', lv)}
+    ${cell('XP still needed', fmt(target - xp), true)}
+    <div class="wide">Total XP at level ${lv}<b>${fmt(target)}</b><div class="xp-bar"><i style="width:${pct}%"></i></div></div>
+  </div>`;
+}
+
+['a_xp'].forEach(id => $(id).addEventListener('input', calcA));
+['b_lv'].forEach(id => $(id).addEventListener('input', calcB));
+['c_xp', 'c_lv'].forEach(id => $(id).addEventListener('input', calcC));
+
+// full table, built the first time it is opened
+$('allLevels').addEventListener('toggle', e => {
+  if (!e.target.open || $('tbl').dataset.done) return;
+  $('tbl').dataset.done = '1';
+  $('tbl').innerHTML = '<tr><th>Level</th><th>Total XP</th><th>XP for this level</th></tr>' +
+    X.table.map((xp, i) => `<tr><td>${i + 1}</td><td>${fmt(xp)}</td><td>${i + 1 < MAX ? fmt(X.table[i + 1] - xp) : '-'}</td></tr>`).join('');
+});
+</script>
+</body>
+</html>
