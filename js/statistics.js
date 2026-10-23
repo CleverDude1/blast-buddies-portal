@@ -1,4 +1,4 @@
-// Statistics page. Needs: js/layout.js, js/clan-colors.js (CLAN_COLORS), js/weapon-names.js, /api/stats (records, level 100, guns) and /api/rooms (live players).
+// Statistics page. Needs: js/layout.js, js/clan-colors.js (CLAN_COLORS), js/weapon-names.js, /api/stats (records, level 100, guns, lifetime) and /api/rooms (live players).
 const STATS_URL = '/api/stats';
 const PODIUM_URL = '/api/podium';          // same data the Podium page uses (medals, players, clans)
 const ROOMS_URL = '/api/rooms';          // same project; use the full https://blast-buddies-portal.vercel.app/api/rooms if this page is hosted elsewhere
@@ -6,10 +6,12 @@ const ROOMS_EVERY = 30000;               // refresh the "online now" card every 
 const REGIONS = [['na', 'North America'], ['eu', 'Europe'], ['as', 'Asia']];
 
 // topWeaponId -> name (= image file in images/weapons). Uses js/weapon-names.js when it is loaded; the built-in copy keeps names working if that script is missing or cached.
-const WEAPON_NAMES = window.BB_WEAPONS || { 1: 'Assault', 2: 'Burst', 3: 'Shotgun', 4: 'MAC-10', 5: 'Lmg', 6: 'Sniper', 7: 'UMP-45', 9: 'RayGun', 10: 'Energy', 11: 'UMP-45', 12: 'Thompson', 15: 'Bow', 101: 'Knife' };
+const WEAPON_NAMES = window.BB_WEAPONS || { 1: 'Assault', 2: 'Burst', 3: 'Shotgun', 4: 'MAC-10', 5: 'Lmg', 6: 'Sniper', 7: 'Pistol', 8: 'Revolver', 9: 'RayGun', 10: 'Energy', 11: 'UMP-45', 12: 'Thompson', 13: 'Flare', 14: 'Snare', 15: 'Bow', 101: 'Knife' };
 if (!window.BB_WEAPONS) console.warn('js/weapon-names.js was not loaded, using the built-in weapon names');
-const wName = id => WEAPON_NAMES[id] || 'Weapon ' + id;
+const wName = id => WEAPON_NAMES[id] || 'Weapon ' + id;                                  // image file name
+const wLabel = id => (window.BB_WEAPON_LABELS && window.BB_WEAPON_LABELS[id]) || wName(id);   // name shown to players (SMG, Spectre, Tommy ...)
 const wImg = id => `images/weapons/${WEAPON_NAMES[id] || id}.png`;
+const GUN_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 101];                 // guns that get a "most kills" card (101 = knife)
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -25,7 +27,7 @@ const detail = {};
 function card(key, o) {
   if (o.details) detail[key] = o.details;
   return `<div class="map-card st-card"${o.details ? ` data-d="${key}"` : ''}>
-    <div class="st-head"><span class="st-icon">${statIcon(o.icon)}</span><div><div class="st-title">${o.title}</div><div class="st-sub">${o.sub}</div></div></div>
+    <div class="st-head"><span class="st-icon">${o.iconHtml || statIcon(o.icon)}</span><div><div class="st-title">${o.title}</div><div class="st-sub">${o.sub}</div></div></div>
     ${o.value !== undefined ? `<div class="map-val">${o.value}</div>` : ''}
     ${(o.notes || []).map(n => `<div class="map-note">${n}</div>`).join('')}
     ${o.body || ''}
@@ -41,9 +43,9 @@ const lvRows = q => {
 };
 function levelCard() {
   const l = stats?.level100;
-  return card('lvl', { icon: 'podium', title: 'Players at level 100', sub: 'Estimated · seen on the top-50 boards',
+  return card('lvl', { icon: 'podium', title: 'Players at level 100', sub: 'Estimated · seen on the leaderboards',
     value: l ? fmt(l.count) : '—', notes: [l ? 'Click to see who' : waiting()],
-    details: l ? () => { lvPlayers = l.players; return `<h3>Players at level 100</h3><div class="muted">Anyone who was ever seen at level 100 stays on this list. Estimate: only players that appeared on the top-50 boards are counted.</div>
+    details: l ? () => { lvPlayers = l.players; return `<h3>Players at level 100</h3><div class="muted">Anyone who was ever seen at level 100 stays on this list. Estimate: only players that appeared on the daily, weekly or ranked boards are counted.</div>
       <input class="search st-filter" id="lvFilter" placeholder="Search name or clan" autocomplete="off"><div class="st-list" id="lvList">${lvRows('')}</div>`; } : null });
 }
 
@@ -63,16 +65,39 @@ function recordCard(key, title, sub, iconId, isClan) {
         <span class="r"><b style="color:var(--text);font-size:17px">${vf(r.value)}</b></span></div>`).join('')}</div>` });
 }
 
-// ---------- popular guns (top 3 of the top 50) ----------
+// ---------- lifetime records + most kills with each gun (from /api/stats -> lifetime) ----------
+// Lifetime numbers cover every player the site has seen on the daily, weekly or ranked boards, and keep their last seen values.
+function topCard(key, o) {   // o: { title, sub, icon | iconHtml, list: [{ name, clan_tag, clan_color, value, note }] }
+  const list = o.list || [];
+  if (!list.length) return card(key, { icon: o.icon, iconHtml: o.iconHtml, title: o.title, sub: o.sub, notes: [stats ? 'No data yet' : waiting()] });
+  const body = `<div class="st-recs">${list.map((r, i) => `<div class="st-rec"><b class="st-rank r${i + 1}">${i + 1}</b>
+      <div class="who"><b>${esc(r.name)}</b> ${tagHtml(r.clan_tag, r.clan_color)}${r.note ? `<small class="st-ok">${r.note}</small>` : ''}</div><span class="val">${r.value}</span></div>`).join('')}</div>`;
+  return card(key, { icon: o.icon, iconHtml: o.iconHtml, title: o.title, sub: o.sub, body });
+}
+function lifetimeKillsCard() {
+  const list = (stats?.lifetime?.kills || []).map(r => ({ ...r, value: fmt(r.kills), note: `${fmt(r.deaths)} deaths · ${fmt(r.games)} games` }));
+  return topCard('life_kills', { icon: 'compare', title: 'Most lifetime kills', sub: 'Top 3 · all modes · all time', list });
+}
+function lifetimeKdrCard() {
+  const list = (stats?.lifetime?.kdr || []).map(r => ({ ...r, value: Number(r.kdr).toFixed(2), note: `${fmt(r.kills)} kills · ${fmt(r.deaths)} deaths` }));
+  return topCard('life_kdr', { icon: 'compare', title: 'Best lifetime KDR', sub: 'Top 3 · all modes · at least 1,000 kills', list });
+}
+function gunRecordCard(id) {
+  const list = (stats?.lifetime?.weapons?.[id] || []).map(r => ({ ...r, value: fmt(r.kills),
+    note: id === 101 ? '' : `${fmt(r.headshots)} headshots${r.kills ? ` (${(r.headshots / r.kills * 100).toFixed(0)}%)` : ''}` }));
+  return topCard('gun_kills_' + id, { iconHtml: `<img src="${esc(wImg(id))}" alt="" onerror="${PH}">`, title: esc(wLabel(id)), sub: 'Most kills with this gun · top 3 · all time', list });
+}
+
+// ---------- popular guns (top 3 of the top 100) ----------
 function gunCard(board, label) {
   const g = stats?.guns?.[board], list = g?.list || [], total = g?.total || 0;
   const bar = x => `<div class="bar b-lvl"><i style="width:${total ? x.count / total * 100 : 0}%"></i></div>`;
   const body = list.length
-    ? `<div class="st-guns">${list.slice(0, 3).map(x => `<div class="st-gun"><img src="${esc(wImg(x.id))}" alt="" onerror="${PH}"><div><div class="t"><span>${esc(wName(x.id))}</span><small>${x.count} of ${total}</small></div>${bar(x)}</div></div>`).join('')}</div>`
+    ? `<div class="st-guns">${list.slice(0, 3).map(x => `<div class="st-gun"><img src="${esc(wImg(x.id))}" alt="" onerror="${PH}"><div><div class="t"><span>${esc(wLabel(x.id))}</span><small>${x.count} of ${total}</small></div>${bar(x)}</div></div>`).join('')}</div>`
     : `<div class="map-note">${stats ? 'No data' : waiting()}</div>`;
-  return card('guns-' + board, { icon: 'weapons', title: 'Most popular guns', sub: `${label} · top ${total || 50} players`, body,
+  return card('guns-' + board, { icon: 'weapons', title: 'Most popular guns', sub: `${label} · top ${total || 100} players`, body,
     details: list.length ? () => `<h3>Most popular guns · ${label}</h3><div class="muted">Main weapon of each of the top ${total} players on the ${label.toLowerCase()} leaderboard.</div>
-      <div class="st-list">${list.map((x, i) => `<div class="st-row gun"><img src="${esc(wImg(x.id))}" alt="" onerror="${PH}"><span class="nm">${i + 1}. ${esc(wName(x.id))}</span><span class="r">${x.count} players (${(x.count / total * 100).toFixed(0)}%)</span></div>`).join('')}</div>` : null });
+      <div class="st-list">${list.map((x, i) => `<div class="st-row gun"><img src="${esc(wImg(x.id))}" alt="" onerror="${PH}"><span class="nm">${i + 1}. ${esc(wLabel(x.id))}</span><span class="r">${x.count} players (${(x.count / total * 100).toFixed(0)}%)</span></div>`).join('')}</div>` : null });
 }
 
 // ---------- players online now ----------
@@ -249,9 +274,13 @@ function render() {
     recordCard('clan_kills', 'Highest clan kills', 'Top 3 · clans · all time', 'clans', true),
     recordCard('hour_gain_clan', 'Biggest clan gain in 1 hour', 'Top 3 · clan kills · all time', 'clans', true),
     recordCard('best_kdr', 'Best KDR of all time', 'Top 3 · at least 1,000 kills', 'compare'),
+    lifetimeKillsCard(), lifetimeKdrCard(),
     gunCard('day', 'Daily'), gunCard('week', 'Weekly'), gunCard('ranked', 'Ranked'),
     medalCard('medals_players', 'Highest medal rank', 'Top 3 players · by medal points', 'podium', false),
     medalCard('medals_clans', 'Highest medal rank', 'Top 3 clans · from their members', 'clans', true),
+    `<h2 class="st-wide" style="margin:22px 0 0;font-size:20px">Most kills with each gun</h2>
+     <p class="st-wide muted" style="margin:0 0 4px">Lifetime kills with that gun, for every player seen on the daily, weekly or ranked boards.</p>`,
+    ...GUN_IDS.map(gunRecordCard),
   ].join('');
 }
 $('stGrid').addEventListener('click', e => {
@@ -267,7 +296,7 @@ async function loadStats() {
   try {
     const r = await fetch(STATS_URL); if (!r.ok) throw new Error('HTTP ' + r.status);
     stats = await r.json(); statsErr = false;
-    $('status').textContent = 'Records and level-100 counts are estimates built from the top-50 leaderboards. Updated ' + new Date(stats.updatedAt).toLocaleTimeString() + '.';
+    $('status').textContent = 'Records and level-100 counts are estimates built from the daily, weekly, ranked and clan leaderboards. Updated ' + new Date(stats.updatedAt).toLocaleTimeString() + '.';
   } catch (e) {
     console.warn('stats failed:', e); statsErr = true;
     $('status').innerHTML = '<b>Could not load statistics.</b> Check the Console (F12) for details.';
