@@ -92,10 +92,13 @@ export function extractList(json) {
 const LIFETIME_KEYS = ['stats', 'weaponStats'];
 
 function toLifetime(raw) {
-  const s = raw.stats;
+  const st = raw.stats, k = Number(st.kills) || 0, d = Number(st.deaths) || 0;
   return {
-    p: { player_id: raw.playerId, name: raw.name ?? null, clan_tag: raw.clanTag || null, clan_color: raw.clanColor ?? null,
-         total_xp: raw.totalXp ?? null, kills: Number(s.kills) || 0, deaths: Number(s.deaths) || 0, assists: Number(s.assists) || 0, games: Number(s.games) || 0 },
+    // lifetime columns of `players`. name / clan_tag / total_xp are NOT here: those are change-tracked by syncEntities (with history)
+    p: { player_id: raw.playerId, clan_id: raw.clanId || null, level: raw.level ?? null,
+         kills: k, deaths: d, assists: Number(st.assists) || 0, games: Number(st.games) || 0,
+         kdr: Math.round((d > 0 ? k / d : k) * 10000) / 10000,
+         seasons: Array.isArray(raw.seasons) ? raw.seasons : [] },
     w: (Array.isArray(raw.weaponStats) ? raw.weaponStats : [])
       .filter(x => x && x.weaponId != null && Number(x.kills) > 0)
       .map(x => ({ weaponId: x.weaponId, kills: Number(x.kills) || 0, headshots: Number(x.headshots) || 0 })),
@@ -127,18 +130,20 @@ export function ingestLeaderboard(source, list, players, entries, lifetime) {
   });
 }
 
-// Upserts lifetime totals + per-weapon kills. Needs the two tables from sql/player_stats.sql.
+// Writes lifetime totals + seasons onto the existing `players` rows and per-weapon kills into player_weapon_stats.
+// Needs sql/players_extend.sql. Runs AFTER the "players" step, so the rows exist; only the lifetime columns are sent,
+// so name / clan / xp (and their change history) are never touched here.
 export async function saveLifetime(db, lifetime, now) {
   const players = [], weapons = [];
   for (const { p, w } of lifetime.values()) {
-    players.push({ ...p, updated_at: now });
+    players.push({ ...p, stats_updated_at: now });
     for (const x of w) weapons.push({ player_id: p.player_id, weapon_id: x.weaponId, kills: x.kills, headshots: x.headshots, updated_at: now });
   }
   for (const batch of chunk(players, 500)) {
-    const { error } = await db.from('player_lifetime').upsert(batch, { onConflict: 'player_id' });
-    if (error) throw new Error(`player_lifetime upsert: ${error.message}`);
+    const { error } = await db.from('players').upsert(batch, { onConflict: 'player_id' });
+    if (error) throw new Error(`players lifetime upsert: ${error.message}`);
   }
-  for (const batch of chunk(weapons, 1000)) {   // after the players above: weapon rows point at player_lifetime
+  for (const batch of chunk(weapons, 1000)) {
     const { error } = await db.from('player_weapon_stats').upsert(batch, { onConflict: 'player_id,weapon_id' });
     if (error) throw new Error(`player_weapon_stats upsert: ${error.message}`);
   }
