@@ -9,6 +9,9 @@
 // /api/stats?mode=weapons  -> favourite weapon of the players on each board (weapons.html)
 // /api/stats?mode=player-list    -> every row of the permanent `players` table (players.html)
 // /api/stats?mode=player&id=ID   -> name / clan / weapon change history of one player (players.html details popup)
+// /api/stats?mode=compare-options                 -> every player in the `players` table as { id, name, tag } (compare.html picker)
+// /api/stats?mode=compare-players&a=ID&b=ID       -> lifetime stats, per-weapon kills and daily/weekly/ranked rows for two players
+// /api/stats?mode=compare-series&a=ID&b=ID        -> stored history of both players on the daily, weekly and ranked boards (graphs)
 // /api/stats?mode=backfill&key=ADMIN_KEY[&after=ID]  -> one-off: rebuild records + level 100 from stored raw_snapshots
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, STATS_ADMIN_KEY (only for backfill)
 import { rest, extractList, ID_RE } from './_lib/shared.js';
@@ -131,6 +134,50 @@ export default async function handler(req, res) {
       ]);
       res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
       return res.status(200).json({ history, weapons, seasons: player?.seasons || [], statsUpdatedAt: player?.stats_updated_at || null });
+    }
+    if (req.query.mode === 'compare-options') {   // Compare page picker: everyone in the permanent players table
+      const rows = await rest('players?select=player_id,name,clan_tag&order=total_xp.desc.nullslast,player_id.asc', { all: true, max: 100000 });
+      res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
+      return res.status(200).json(rows.map(r => ({ id: r.player_id, name: r.name || r.player_id, tag: r.clan_tag || '' })));
+    }
+    if (req.query.mode === 'compare-players' || req.query.mode === 'compare-series') {
+      const a = String(req.query.a || ''), b = String(req.query.b || '');
+      if (!ID_RE.test(a) || !ID_RE.test(b)) return res.status(400).json({ error: 'bad player id' });
+      if (a === b) return res.status(400).json({ error: 'pick two different players' });
+      const rk = await latestPayload('ranked').catch(() => null), season = Number(rk?.payload?.season) || 3;   // current ranked season
+      res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
+      if (req.query.mode === 'compare-series') {
+        const spec = { day: { board: 'day', days: 35 }, week: { board: 'week', days: 100 }, ranked: { board: 'ranked', days: 400 } };
+        const out = { day: { a: [], b: [] }, week: { a: [], b: [] }, ranked: { a: [], b: [] } };
+        const cols = 'kills,deaths,trophies,ranked_wins,ranked_losses';
+        await Promise.all(Object.entries(spec).flatMap(([key, { board, days }]) => [['a', a], ['b', b]].map(async ([side, id]) => {
+          const since = enc(new Date(Date.now() - days * 864e5).toISOString()), sn = board === 'ranked' ? season : 0;
+          try {
+            // every hourly snapshot (entry_snapshots) when it has data, else the change-only history table
+            let rows = (await rest(`entry_snapshots?select=taken_at,${cols}&kind=eq.${board}&season=eq.${sn}&entity_id=eq.${enc(id)}&taken_at=gte.${since}&order=taken_at.desc`, { all: true, max: 6000 }).catch(() => []))
+              .reverse().map(({ taken_at, ...r }) => ({ observed_at: taken_at, ...r }));
+            if (!rows.length) rows = await rest(`leaderboard_history?select=observed_at,${cols}&player_id=eq.${enc(id)}&board=eq.${board}&season=eq.${sn}&observed_at=gte.${since}&order=observed_at.asc`, { all: true, max: 6000 });
+            out[key][side] = rows;
+          } catch (e) { console.error(`series ${key} failed:`, e.message); out[key][side] = []; }
+        })));
+        return res.status(200).json(out);
+      }
+      const inl = `in.(${a},${b})`;
+      const [players, weapons, state] = await Promise.all([
+        rest(`players?select=player_id,name,total_xp,level,top_weapon_id,clan_id,clan_tag,clan_color,kills,deaths,assists,games,kdr,seasons,first_seen_at,last_seen_at,stats_updated_at&player_id=${inl}`),
+        rest(`player_weapon_stats?select=player_id,weapon_id,kills,headshots&player_id=${inl}`).catch(() => []),
+        rest(`leaderboard_state?select=board,season,player_id,rank,kills,deaths,trophies,ranked_wins,ranked_losses,last_seen_at&player_id=${inl}`).catch(() => []),
+      ]);
+      const pa = players.find(p => p.player_id === a), pb = players.find(p => p.player_id === b);
+      if (!pa || !pb) return res.status(404).json({ error: 'player not found in the players table' });
+      const pick = id => {                         // this player's row on each board (ranked: the current season, else the newest one)
+        const mine = state.filter(r => r.player_id === id), ranked = mine.filter(r => r.board === 'ranked').sort((x, y) => y.season - x.season);
+        return { day: mine.find(r => r.board === 'day') || null, week: mine.find(r => r.board === 'week') || null, ranked: ranked.find(r => r.season === season) || null };
+      };
+      return res.status(200).json({ type: 'player', season,
+        info: { a: { id: a, name: pa.name, tag: pa.clan_tag || '' }, b: { id: b, name: pb.name, tag: pb.clan_tag || '' } },
+        a: pa, b: pb, weapons: { a: weapons.filter(w => w.player_id === a), b: weapons.filter(w => w.player_id === b) },
+        state: { a: pick(a), b: pick(b) } });
     }
     if (req.query.mode === 'players') {           // id -> name lookup: /api/stats?mode=players&ids=id1,id2,...
       const ids = String(req.query.ids || '').split(',').map(x => x.trim()).filter(Boolean);
