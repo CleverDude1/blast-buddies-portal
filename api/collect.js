@@ -7,6 +7,7 @@ import {
   ingestLeaderboard,
   ingestClans,
   saveLifetime,
+  saveMonthlyKills,
   syncEntities,
   PLAYER_TRACKED,
   ENTRY_TRACKED,
@@ -72,6 +73,7 @@ export default async function handler(req, res) {
   const entriesBySource = [];
   const boards = []; // used by the records step
   let fetchedOk = 0;
+  let bundle = null;            // the whole Pangolin response (clan archives are read from it)
 
   for (let i = 0; i < SOURCES.length; i++) {
     const s = SOURCES[i];
@@ -86,6 +88,7 @@ export default async function handler(req, res) {
       continue;
     }
     fetchedOk++;
+    bundle = json;
 
     for (const b of BOARDS) {
       const top = b.pick(json);
@@ -136,6 +139,7 @@ export default async function handler(req, res) {
     }));
 
   await step('lifetime', () => saveLifetime(db, lifetime, now));
+  await step('monthlyKills', () => saveMonthlyKills(db, bundle?.clans?.archives, now));
 
   for (const { s, entries } of entriesBySource) {
     await step(`board:${s.key}`, () =>
