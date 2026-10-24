@@ -150,6 +150,44 @@ export async function saveLifetime(db, lifetime, now) {
   return { players: players.length, weapons: weapons.length };
 }
 
+// ---------------------------------------------------------------------
+// Monthly kills of clan members, from the API's clan archives (the top 20 clans of each finished month, with every member's kills).
+// Only players whose clan finished in the top 20 that month are in the archives (the "20 clan cutoff").
+// ---------------------------------------------------------------------
+export function monthlyKillRows(archives, periods) {
+  const byKey = new Map();
+  for (const m of archives || []) {
+    if (!m?.period || (periods && !periods.has(m.period))) continue;
+    (Array.isArray(m.top) ? m.top : []).forEach((c, i) => {
+      for (const p of c.members || []) {
+        if (!p?.playerId) continue;
+        const row = { period: m.period, player_id: p.playerId, name: p.name ?? null, level: p.level ?? null, kills: Number(p.kills) || 0,
+          clan_id: c.clanId ?? null, clan_tag: c.tag ?? null, clan_color: c.color ?? null, clan_name: c.name ?? null,
+          clan_rank: c.rank ?? i + 1, clan_kills: Number(c.kills) || 0, is_leader: !!p.isLeader, top_weapon_id: p.topWeaponId ?? null };
+        const k = row.period + '|' + row.player_id, prev = byKey.get(k);
+        if (!prev || row.kills > prev.kills) byKey.set(k, row);     // a player listed in two clans that month: keep the bigger number
+      }
+    });
+  }
+  return [...byKey.values()];
+}
+
+// First run (empty table): stores every month the API still has. Later runs: only the newest 2 months (a new month shows up once).
+export async function saveMonthlyKills(db, archives, now) {
+  const list = Array.isArray(archives) ? archives.filter(m => m?.period) : [];
+  if (!list.length) return { rows: 0, note: 'no clan archives in the response' };
+  const { data, error } = await db.from('monthly_player_kills').select('period').limit(1);
+  if (error) throw new Error(`monthly_player_kills read: ${error.message}`);
+  const first = !data?.length;
+  const newest = new Set(list.map(m => m.period).sort().slice(-2));
+  const rows = monthlyKillRows(list, first ? null : newest).map(r => ({ ...r, updated_at: now }));
+  for (const batch of chunk(rows, 500)) {
+    const { error: e } = await db.from('monthly_player_kills').upsert(batch, { onConflict: 'period,player_id' });
+    if (e) throw new Error(`monthly_player_kills upsert: ${e.message}`);
+  }
+  return { rows: rows.length, firstRun: first };
+}
+
 export function ingestClans(list, clans) {
   for (const raw of list) {
     if (!raw || !raw.clanId) continue;
