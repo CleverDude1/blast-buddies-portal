@@ -50,21 +50,21 @@ async function gunsFromStored(boards) {
   return guns;
 }
 
-// top 3 lifetime kills, top 3 lifetime KDR (min 1,000 kills) and top 3 kills with each gun, from player_lifetime / player_weapon_stats.
-// Each list falls back to [] on its own, so the page still works before the tables exist.
+// top 3 lifetime kills, top 3 lifetime KDR (min 1,000 kills) and top 3 kills with each gun, from `players` / player_weapon_stats.
+// Each list falls back to [] on its own, so the page still works before sql/players_extend.sql has been run.
 async function loadLifetime() {
   const cols = 'player_id,name,clan_tag,clan_color,kills,deaths,games,kdr';
   const safe = p => p.catch(e => { console.error('lifetime query failed:', e.message); return []; });
   const [kills, kdr, ...perGun] = await Promise.all([
-    safe(rest(`player_lifetime?select=${cols}&order=kills.desc&limit=3`)),
-    safe(rest(`player_lifetime?select=${cols}&kills=gte.1000&order=kdr.desc&limit=3`)),
+    safe(rest(`players?select=${cols}&kills=not.is.null&order=kills.desc&limit=3`)),
+    safe(rest(`players?select=${cols}&kills=gte.1000&order=kdr.desc&limit=3`)),
     ...WEAPON_IDS.map(id => safe(rest(
-      `player_weapon_stats?select=player_id,kills,headshots,player_lifetime(name,clan_tag,clan_color)&weapon_id=eq.${id}&kills=gt.0&order=kills.desc&limit=3`))),
+      `player_weapon_stats?select=player_id,kills,headshots,players(name,clan_tag,clan_color)&weapon_id=eq.${id}&kills=gt.0&order=kills.desc&limit=3`))),
   ]);
   const weapons = {};
   WEAPON_IDS.forEach((id, i) => {
     weapons[id] = (perGun[i] || []).map(r => ({ player_id: r.player_id, kills: r.kills, headshots: r.headshots,
-      name: r.player_lifetime?.name ?? r.player_id, clan_tag: r.player_lifetime?.clan_tag ?? '', clan_color: r.player_lifetime?.clan_color ?? null }));
+      name: r.players?.name ?? r.player_id, clan_tag: r.players?.clan_tag ?? '', clan_color: r.players?.clan_color ?? null }));
   });
   return { kills, kdr, weapons };
 }
@@ -117,16 +117,20 @@ export default async function handler(req, res) {
       return res.status(200).json(await backfill(Number(req.query.after) || 0));
     }
     if (req.query.mode === 'player-list') {       // Player Database page: the whole permanent `players` table (the page sorts and filters it)
-      const players = await rest('players?select=player_id,name,total_xp,top_weapon_id,clan_tag,clan_color,first_seen_at,last_seen_at&order=total_xp.desc.nullslast,player_id.asc', { all: true, max: 100000 });
+      const players = await rest('players?select=player_id,name,total_xp,level,top_weapon_id,clan_id,clan_tag,clan_color,kills,deaths,assists,games,kdr,first_seen_at,last_seen_at&order=total_xp.desc.nullslast,player_id.asc', { all: true, max: 100000 });
       res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
       return res.status(200).json({ count: players.length, players });
     }
     if (req.query.mode === 'player') {            // one player's change history (names, clans, weapons)
       const id = String(req.query.id || '');
       if (!ID_RE.test(id)) return res.status(400).json({ error: 'bad player id' });
-      const history = await rest(`player_history?select=change_type,changes,observed_at&player_id=eq.${enc(id)}&order=observed_at.desc&limit=200`);
+      const [history, weapons, [player]] = await Promise.all([
+        rest(`player_history?select=change_type,changes,observed_at&player_id=eq.${enc(id)}&order=observed_at.desc&limit=200`),
+        rest(`player_weapon_stats?select=weapon_id,kills,headshots&player_id=eq.${enc(id)}&order=kills.desc`).catch(() => []),
+        rest(`players?select=seasons,stats_updated_at&player_id=eq.${enc(id)}`).catch(() => [{}]),
+      ]);
       res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
-      return res.status(200).json({ history });
+      return res.status(200).json({ history, weapons, seasons: player?.seasons || [], statsUpdatedAt: player?.stats_updated_at || null });
     }
     if (req.query.mode === 'players') {           // id -> name lookup: /api/stats?mode=players&ids=id1,id2,...
       const ids = String(req.query.ids || '').split(',').map(x => x.trim()).filter(Boolean);
