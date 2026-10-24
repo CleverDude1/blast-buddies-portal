@@ -1,5 +1,8 @@
 // ================= CONFIG =================
-const API = '/api/compare';   // api/compare.js on Vercel. Use a full https:// URL if these pages are hosted somewhere else.
+// Players: lifetime stats come from the `players` table through /api/stats (compare-* modes).
+// Clans: still /api/compare (api/compare.js on Vercel). Use full https:// URLs if these pages are hosted somewhere else.
+const API = '/api/compare';
+const PLAYER_API = '/api/stats';
 const DAY = 864e5, WEEK = 7 * DAY;
 const dayStart = t => Math.floor(t / DAY) * DAY;                              // all periods are UTC
 const weekStart = t => Math.floor((t - 4 * DAY) / WEEK) * WEEK + 4 * DAY;     // weeks start Monday 00:00 UTC
@@ -11,14 +14,10 @@ const BOARDS = {
   week:   { label: 'Weekly', unit: 'weeks', metrics: DL },
   ranked: { label: 'Ranked', unit: 'days',  metrics: [['trophies', 'Trophies', 'high'], ['wins', 'Wins', 'high'], ['losses', 'Losses', 'low'], ['winrate', 'Win rate', 'high']] },
 };
-// averages come from the SQL views: [label, column, rankColumn, better, format]
+// clan averages come from the SQL views: [label, column, rankColumn, better, format]
 const AVG = {
-  day:    [['Average kills', 'avg_kills', 'avg_kills_rank', 'high'], ['Maximum kills', 'max_kills', null, 'high'], ['Average deaths', 'avg_deaths', 'avg_deaths_rank', 'low'],
-           ['Average KDR', 'avg_kdr', 'avg_kdr_rank', 'high', 'kdr'], ['Average position', 'avg_rank', 'avg_rank_rank', 'low', 'pos']],
-  ranked: [['Average trophies', 'avg_trophies', 'avg_trophies_rank', 'high'], ['Maximum trophies', 'max_trophies', null, 'high'], ['Average position', 'avg_rank', 'avg_rank_rank', 'low', 'pos']],
   clan:   [['Average kills', 'avg_kills', 'avg_kills_rank', 'high'], ['Maximum kills', 'max_kills', null, 'high'], ['Average members', 'avg_members', 'avg_members_rank', 'high'], ['Maximum members', 'max_members', null, 'high']],
 };
-AVG.week = AVG.day;
 
 const T7 = [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['365', 'Last 365 days']];
 const GRAPHS = {
@@ -44,6 +43,9 @@ function compact(n) {
 }
 const FMT = { kdr: v => v.toFixed(2), winrate: v => v.toFixed(1) + '%', fill: v => v.toFixed(0) + '%', pos: v => '#' + v.toFixed(1) };
 const DFMT = { winrate: v => v.toFixed(1) + ' pts', fill: v => v.toFixed(0) + ' pts' };
+const WN = id => (window.BB_WEAPONS && window.BB_WEAPONS[id]) || ('Weapon ' + id);                       // image file name
+const WL = id => (window.BB_WEAPON_LABELS && window.BB_WEAPON_LABELS[id]) || WN(id);                     // name shown to players
+const wIcon = id => `<img src="images/weapons/${esc(WN(id))}.png" alt="" style="height:20px;vertical-align:middle;margin-right:6px" onerror="this.onerror=null;this.style.display='none'">`;
 
 // value of a metric from a state/history row (players and clans)
 function val(r, m) {
@@ -71,8 +73,9 @@ function rankIn(pop, idKey, id, m, dir) {
 }
 
 // one comparison row: value A | label + split bar | value B. Returns {html, lead}
+// na / nb = optional small notes under each value
 function cmpRow(label, va, vb, o = {}) {
-  const { dir = 'high', fmt = compact, dfmt = fmt, ra = null, rb = null, diff = true, bar = true } = o;
+  const { dir = 'high', fmt = compact, dfmt = fmt, ra = null, rb = null, diff = true, bar = true, na = '', nb = '' } = o;
   const has = va != null && vb != null;
   const hi = has && va !== vb ? (va > vb ? 'a' : 'b') : null;                      // the HIGHER number gets the + difference
   const lead = hi ? (dir === 'high' ? hi : (hi === 'a' ? 'b' : 'a')) : null;       // the BETTER number is highlighted
@@ -81,10 +84,12 @@ function cmpRow(label, va, vb, o = {}) {
     const hv = Math.max(va, vb), lv = Math.min(va, vb), pct = lv > 0 ? (hv / lv - 1) * 100 : null;
     d = `+${dfmt(hv - lv)}` + (pct == null ? '' : ` · +${pct < 10 ? pct.toFixed(1) : Math.round(pct).toLocaleString()}%`);
   }
-  const cell = (s, v, r) => `<div class="v ${s}${lead === s ? ' lead' : ''}"><b>${v == null ? 'N/A' : fmt(v)}</b><small>${[r ? '#' + r : '', hi === s ? d : ''].filter(Boolean).join(' ')}</small></div>`;
+  const cell = (s, v, r, n) => `<div class="v ${s}${lead === s ? ' lead' : ''}"><b>${v == null ? 'N/A' : fmt(v)}</b><small>${[r ? '#' + r : '', n, hi === s ? d : ''].filter(Boolean).join(' ')}</small></div>`;
   const share = has && va + vb > 0 ? va / (va + vb) * 100 : 50;
-  return { lead, html: `<div class="cmp-row">${cell('a', va, ra)}<div class="mid">${label}<div class="split${has && bar ? '' : ' none'}"><i style="width:${share}%"></i></div></div>${cell('b', vb, rb)}</div>` };
+  return { lead, html: `<div class="cmp-row">${cell('a', va, ra, na)}<div class="mid">${label}<div class="split${has && bar ? '' : ' none'}"><i style="width:${share}%"></i></div></div>${cell('b', vb, rb, nb)}</div>` };
 }
+// a row of plain text values (clan, top weapon ...)
+const textRow = (label, ta, tb) => `<div class="cmp-row"><div class="v a"><b>${esc(ta ?? 'N/A')}</b></div><div class="mid">${label}<div class="split none"><i></i></div></div><div class="v b"><b>${esc(tb ?? 'N/A')}</b></div></div>`;
 
 // ================= STATE =================
 let type = 'player', options = { player: [], clan: [] }, labelToId = {}, idToLabel = {};
@@ -100,10 +105,8 @@ async function getJson(url) {
 async function loadOptions() {
   $('msg').textContent = 'Loading list...';
   try {
-    if (!options[type].length) options[type] = await getJson(`${API}?mode=options&type=${type}`);
+    if (!options[type].length) options[type] = await getJson(type === 'player' ? `${PLAYER_API}?mode=compare-options` : `${API}?mode=options&type=${type}`);
     labelToId = {}; idToLabel = {};
-    const seen = {};
-    options[type].forEach(o => { seen[o.name] = (seen[o.name] || 0) + 1; });
     options[type].forEach(o => {
       let l = o.name + (o.tag ? ` [${o.tag}]` : '');
       if (labelToId[l.toLowerCase()]) l += ` #${o.id.slice(0, 4)}`;
@@ -127,30 +130,88 @@ function headCard(info, lead, body) {
   return `<div class="cmp-card"><div class="cmp-head"><h3>${who}<small>${title}</small></h3><div class="leadbar">${bar}</div></div>
     <div class="cmp-names">${nameTag('a', info.a)}${nameTag('b', info.b)}</div>${body}</div>`;
 }
+// players: the winner is decided by lifetime KDR ONLY; the bar shows the two KDRs
+function kdrHead(info, ka, kb, body) {
+  const has = ka != null && kb != null, tie = has && ka === kb;
+  const title = !has ? 'NOT ENOUGH DATA' : tie ? 'TIED' : 'LEADING';
+  const who = has && !tie ? `<span style="color:var(${ka > kb ? '--ca' : '--cb'})">${esc((ka > kb ? info.a : info.b).name)}</span>` : '';
+  const bar = has && ka + kb > 0 ? `<i class="a" style="flex:${ka}">${ka.toFixed(2)}</i><i class="b" style="flex:${kb}">${kb.toFixed(2)}</i>` : '<i style="flex:1;background:#2a3322;color:#8b9380">N/A</i>';
+  return `<div class="cmp-card"><div class="cmp-head"><h3>${who}<small>${title} · LIFETIME KDR</small></h3><div class="leadbar">${bar}</div></div>
+    <div class="cmp-names">${nameTag('a', info.a)}${nameTag('b', info.b)}</div>${body}</div>`;
+}
 
 const when = iso => new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+const dateOnly = iso => iso ? new Date(iso).toISOString().slice(0, 10) : null;
 const secHead = (title, notes) => `<div class="cmp-sec">${title}${notes.length ? `<span class="note">${esc(notes.join(' · '))}</span>` : ''}</div>`;
 
-// Values come from the LIVE leaderboard APIs. Someone who is not on the live list shows the newest stored JSON values (fallback) and is marked "last seen".
+// Players. Lifetime numbers (all modes) come from the `players` table. Nothing from the daily / weekly / ranked sections
+// below is counted in the result: the leader is whoever has the better lifetime KDR.
 function renderPlayers(d) {
-  const { a, b } = d.info, lead = { a: 0, b: 0 };
+  const { info } = d, A = d.a, P = d.b;
+  const lvl = p => p.total_xp != null ? xpToLevel(Number(p.total_xp)) : num(p.level);
+  const kdrOf = p => num(p.kills) == null ? null : val({ kills: p.kills, deaths: p.deaths }, 'kdr');
+  const perGame = (p, f) => { const g = num(p.games), v = num(p[f]); return g > 0 && v != null ? v / g : null; };
+  const f2 = v => v.toFixed(2);
+  const ka = kdrOf(A), kb = kdrOf(P);
+  const missing = [num(A.kills) == null ? `${info.a.name}: lifetime stats not collected yet` : '', num(P.kills) == null ? `${info.b.name}: lifetime stats not collected yet` : ''].filter(Boolean);
   let body = '';
-  for (const key of ['day', 'week', 'ranked']) {
-    const B = BOARDS[key], live = d.boards[key] || [], fb = d.fallback?.[key] || {};
-    const la = live.find(r => r.player_id === a.id), lb = live.find(r => r.player_id === b.id);
-    const ra = la || fb.a, rb = lb || fb.b;
-    const notes = [!la && fb.a ? `${a.name}: last seen ${when(fb.a._at)}` : '', !lb && fb.b ? `${b.name}: last seen ${when(fb.b._at)}` : ''].filter(Boolean);
-    body += secHead(key === 'ranked' ? `RANKED SEASON ${d.season}` : B.label.toUpperCase(), notes);
-    body += cmpRow('Leaderboard position', num(la?.rank), num(lb?.rank), { dir: 'low', fmt: v => '#' + v, diff: false, bar: false }).html;
-    for (const [m, label, dir] of B.metrics) {
-      const row = cmpRow(label, val(ra, m), val(rb, m), { dir, fmt: FMT[m] || compact, dfmt: DFMT[m] || FMT[m] || compact,
-        ra: la ? rankIn(live, 'player_id', a.id, m, dir) : null, rb: lb ? rankIn(live, 'player_id', b.id, m, dir) : null });
-      if (row.lead) lead[row.lead]++;
-      body += row.html;
+
+  // ----- profile -----
+  body += secHead('PROFILE', []);
+  body += cmpRow('Level', lvl(A), lvl(P), { fmt: v => String(v), bar: false, diff: false }).html;
+  body += cmpRow('Total XP', num(A.total_xp), num(P.total_xp), { bar: false, diff: false }).html;
+  body += cmpRow('Games played', num(A.games), num(P.games), { bar: false, diff: false }).html;
+  body += textRow('Clan', A.clan_tag ? `[${A.clan_tag}]` : 'None', P.clan_tag ? `[${P.clan_tag}]` : 'None');
+  body += textRow('Top weapon', A.top_weapon_id != null ? WL(A.top_weapon_id) : null, P.top_weapon_id != null ? WL(P.top_weapon_id) : null);
+  body += textRow('First seen by the tracker', dateOnly(A.first_seen_at), dateOnly(P.first_seen_at));
+
+  // ----- lifetime (decides the result through KDR) -----
+  body += secHead('LIFETIME · ALL MODES · RESULT IS DECIDED BY KDR ONLY', missing);
+  body += cmpRow('Kills', num(A.kills), num(P.kills)).html;
+  body += cmpRow('Deaths', num(A.deaths), num(P.deaths), { dir: 'low' }).html;
+  body += cmpRow('KDR', ka, kb, { fmt: f2 }).html;
+  body += cmpRow('Kills per game', perGame(A, 'kills'), perGame(P, 'kills'), { fmt: f2 }).html;
+  body += cmpRow('Deaths per game', perGame(A, 'deaths'), perGame(P, 'deaths'), { dir: 'low', fmt: f2 }).html;
+
+  // ----- guns -----
+  const wa = new Map(d.weapons.a.map(w => [w.weapon_id, w])), wb = new Map(d.weapons.b.map(w => [w.weapon_id, w]));
+  const ids = [...new Set([...wa.keys(), ...wb.keys()])].sort((x, y) => ((wb.get(y)?.kills || 0) + (wa.get(y)?.kills || 0)) - ((wb.get(x)?.kills || 0) + (wa.get(x)?.kills || 0)));
+  if (ids.length) {
+    const sum = m => [...m.values()].reduce((s, w) => s + w.kills, 0);
+    const hsRate = m => { let k = 0, h = 0; for (const w of m.values()) if (w.weapon_id !== 101) { k += w.kills; h += w.headshots; } return k > 0 ? h / k * 100 : null; };
+    const totA = sum(wa), totB = sum(wb);
+    body += secHead('GUNS · LIFETIME KILLS WITH EACH GUN · NOT COUNTED IN THE RESULT', []);
+    body += cmpRow('Headshot rate (all guns)', hsRate(wa), hsRate(wb), { fmt: FMT.winrate, dfmt: DFMT.winrate }).html;
+    const note = (w, tot, id) => w ? [tot > 0 ? `${(w.kills / tot * 100).toFixed(0)}% of kills` : '', id !== 101 && w.kills ? `HS ${(w.headshots / w.kills * 100).toFixed(0)}%` : ''].filter(Boolean).join(' · ') : '';
+    for (const id of ids) {
+      const a = wa.get(id), b = wb.get(id);
+      body += cmpRow(`${wIcon(id)}${esc(WL(id))}`, wa.size ? (a?.kills ?? 0) : null, wb.size ? (b?.kills ?? 0) : null, { na: note(a, totA, id), nb: note(b, totB, id) }).html;
     }
   }
-  return headCard(d.info, lead, body);
+
+  // ----- ranked seasons (all of them) -----
+  const sa = new Map((A.seasons || []).map(s => [s.season, s])), sb = new Map((P.seasons || []).map(s => [s.season, s]));
+  const seasons = [...new Set([...sa.keys(), ...sb.keys()])].sort((x, y) => y - x);
+  if (seasons.length) {
+    const wl = s => s ? `${s.rankedWins}W ${s.rankedLosses}L${s.rankedWins + s.rankedLosses ? ` (${(s.rankedWins / (s.rankedWins + s.rankedLosses) * 100).toFixed(0)}%)` : ''}` : '';
+    body += secHead('RANKED SEASONS · NOT COUNTED IN THE RESULT', []);
+    for (const n of seasons) body += cmpRow(`Season ${n} trophies`, num(sa.get(n)?.trophies), num(sb.get(n)?.trophies), { na: wl(sa.get(n)), nb: wl(sb.get(n)), diff: false }).html;
+  }
+
+  // ----- daily / weekly / ranked right now (not counted) -----
+  const live = r => r && Date.now() - Date.parse(r.last_seen_at) < 3 * 36e5;   // the collector runs hourly
+  for (const key of ['day', 'week', 'ranked']) {
+    const B = BOARDS[key], ra = d.state.a[key], rb = d.state.b[key];
+    const notes = [ra && !live(ra) ? `${info.a.name}: last seen ${when(ra.last_seen_at)}` : '', rb && !live(rb) ? `${info.b.name}: last seen ${when(rb.last_seen_at)}` : ''].filter(Boolean);
+    body += secHead((key === 'ranked' ? `RANKED SEASON ${d.season}` : B.label.toUpperCase()) + ' · NOT COUNTED IN THE RESULT', notes);
+    body += cmpRow('Leaderboard position', live(ra) ? num(ra.rank) : null, live(rb) ? num(rb.rank) : null, { dir: 'low', fmt: v => '#' + v, diff: false, bar: false }).html;
+    for (const [m, label, dir] of B.metrics)
+      body += cmpRow(label, val(ra, m), val(rb, m), { dir, fmt: FMT[m] || compact, dfmt: DFMT[m] || FMT[m] || compact }).html;
+  }
+  return kdrHead(info, ka, kb, body);
 }
+
+// Values come from the LIVE leaderboard APIs. Someone who is not on the live list shows the newest stored JSON values (fallback) and is marked "last seen".
 function renderClans(d) {
   const { a, b } = d.info, lead = { a: 0, b: 0 }, fb = d.fallback || {};
   const la = d.pop.find(r => r.clan_id === a.id), lb = d.pop.find(r => r.clan_id === b.id);
@@ -171,7 +232,7 @@ function renderClans(d) {
   return headCard(d.info, lead, body);
 }
 
-// ================= RENDER: AVERAGES =================
+// ================= RENDER: AVERAGES (clans) =================
 function avgCard(title, rowA, rowB, defs, unit) {
   const stats = defs.map(([label, col, rk, dir, f]) => {
     const va = num(rowA?.[col]), vb = num(rowB?.[col]), fmt = FMT[f] || compact;
@@ -184,16 +245,10 @@ function avgCard(title, rowA, rowB, defs, unit) {
 }
 function renderAverages(d) {
   const find = (rows, idKey, id, board) => rows.find(r => r[idKey] === id && (!board || r.board === board));
-  let cards;
-  if (d.type === 'player') {
-    cards = ['day', 'week', 'ranked'].map(k => avgCard(k === 'ranked' ? `Ranked season ${d.season}` : BOARDS[k].label,
-      find(d.averages, 'player_id', d.info.a.id, k), find(d.averages, 'player_id', d.info.b.id, k), AVG[k], BOARDS[k].unit)).join('');
-  } else {
-    cards = avgCard('Clan overview', find(d.averages, 'clan_id', d.info.a.id), find(d.averages, 'clan_id', d.info.b.id), AVG.clan, 'days');
-  }
+  const cards = avgCard('Clan overview', find(d.averages, 'clan_id', d.info.a.id), find(d.averages, 'clan_id', d.info.b.id), AVG.clan, 'days');
   return `<div class="cmp-card"><div class="cmp-title">AVERAGE SCORES AND RANKINGS</div>
     <div class="avg-grid">${cards}</div>
-    <p class="gr-note" style="margin:0;padding:0 28px 20px">Averages use one value per period (the last one seen). "×N" is how many periods were tracked. The # is the rank among all tracked players' averages (clans: among all clans).</p></div>`;
+    <p class="gr-note" style="margin:0;padding:0 28px 20px">Averages use one value per period (the last one seen). "×N" is how many periods were tracked. The # is the rank among all clans' averages.</p></div>`;
 }
 
 // ================= GRAPHS =================
@@ -300,17 +355,20 @@ async function run() {
   if (!ia || !ib) { $('msg').textContent = 'Pick both from the list that appears as you type.'; return; }
   if (ia === ib) { $('msg').textContent = 'Pick two different ones.'; return; }
   const q = `type=${type}&a=${encodeURIComponent(ia)}&b=${encodeURIComponent(ib)}`;
+  const pq = `a=${encodeURIComponent(ia)}&b=${encodeURIComponent(ib)}`;
   history.replaceState(null, '', `?${q}`);
   $('msg').textContent = 'Loading...'; $('result').innerHTML = '';
   try {
-    const d = await getJson(`${API}?mode=compare&${q}`);
+    const player = type === 'player';
+    const d = await getJson(player ? `${PLAYER_API}?mode=compare-players&${pq}` : `${API}?mode=compare&${q}`);
     names = { a: d.info.a.name, b: d.info.b.name };
     gstate = JSON.parse(JSON.stringify(GSTATE0));
-    const keys = type === 'player' ? ['day', 'week', 'ranked'] : ['ckills', 'cmembers'];
-    $('result').innerHTML = (type === 'player' ? renderPlayers(d) : renderClans(d)) + renderAverages(d)
+    const keys = player ? ['day', 'week', 'ranked'] : ['ckills', 'cmembers'];
+    $('result').innerHTML = (player ? renderPlayers(d) : renderClans(d) + renderAverages(d))
+      + (player ? '<div class="cmp-sec" style="margin-top:28px">HISTORY · DAILY, WEEKLY AND RANKED</div>' : '')
       + `<div class="gr-grid">${keys.map(graphCard).join('')}</div><p class="gr-note">Day and week boundaries use UTC. Lines show what the collector recorded, so history starts from when collection began.</p>`;
     $('msg').textContent = '';
-    seriesData = prep(await getJson(`${API}?mode=series&${q}`));
+    seriesData = prep(await getJson(player ? `${PLAYER_API}?mode=compare-series&${pq}` : `${API}?mode=series&${q}`));
     keys.forEach(drawGraph);
   } catch (e) { console.error(e); $('msg').textContent = 'Could not load the comparison: ' + e.message; }
 }
