@@ -13,7 +13,7 @@
 <template id="page-content">
 <section class="panel">
   <h1 class="page-title">Compare</h1>
-  <p class="muted">Compare two players or two clans. Anyone who appears on a leaderboard (daily, weekly or the current ranked season) can be compared.</p>
+  <p class="muted">Compare two players or two clans. Players are compared on their lifetime stats (kills, deaths, KDR and every gun) and the result is decided by lifetime KDR only. Daily, weekly and ranked scores are shown lower down and are not counted. Anyone the tracker has seen on a leaderboard can be compared.</p>
   <div class="cmp-tabs" id="typeTabs"><button class="on" data-type="player">Players</button><button data-type="clan">Clans</button></div>
   <div class="cmp-pick">
     <label><i class="dot a"></i><input id="inA" list="opts" placeholder="First player" autocomplete="off" aria-label="First"></label>
@@ -27,6 +27,8 @@
 <div id="result"></div>
 </template>
 <script src="js/layout.js"></script>
+<script src="js/level.js"></script>
+<script src="js/weapon-names.js"></script>
 <script src="js/compare.js"></script>
 </body>
 </html>
