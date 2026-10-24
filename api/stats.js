@@ -72,6 +72,17 @@ async function loadLifetime() {
   return { kills, kdr, weapons };
 }
 
+// top 10 players by kills in a single month (one entry per player = their best month), from monthly_player_kills.
+// Only members of the month's top 20 clans are in there (the API's clan archives only cover those).
+async function loadMonthlyKills() {
+  try {
+    const rows = await rest('monthly_player_kills?select=period,player_id,name,level,kills,clan_tag,clan_color,clan_name,clan_rank,top_weapon_id&order=kills.desc&limit=150');
+    const seen = new Set(), out = [];
+    for (const r of rows) { if (seen.has(r.player_id)) continue; seen.add(r.player_id); out.push(r); if (out.length === 10) break; }
+    return out;
+  } catch (e) { console.error('monthly kills failed:', e.message); return []; }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   try {
@@ -197,14 +208,15 @@ export default async function handler(req, res) {
     }
     // main call: records are written by the collector, so this only reads
     const now = Date.now();
-    const [stats, online, guns, lifetime] = await Promise.all([
+    const [stats, online, guns, lifetime, monthlyKills] = await Promise.all([
       loadStats(),
       loadOnline().catch(() => []),
       gunsFromStored(['day', 'week', 'ranked']),
       loadLifetime(),
+      loadMonthlyKills(),
     ]);
     res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
-    res.status(200).json({ updatedAt: new Date(now).toISOString(), ...stats, online, guns, lifetime });
+    res.status(200).json({ updatedAt: new Date(now).toISOString(), ...stats, online, guns, lifetime, monthlyKills });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });
