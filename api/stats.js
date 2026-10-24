@@ -7,9 +7,11 @@
 // /api/stats?mode=sample   -> called by the Supabase cron once an hour (:55) (Bearer secret): runs the clan league tick, stores one online-players sample + updates the all-time peak
 // /api/stats?mode=league   -> the open clan league day + roster (league.html)
 // /api/stats?mode=weapons  -> favourite weapon of the players on each board (weapons.html)
+// /api/stats?mode=player-list    -> every row of the permanent `players` table (players.html)
+// /api/stats?mode=player&id=ID   -> name / clan / weapon change history of one player (players.html details popup)
 // /api/stats?mode=backfill&key=ADMIN_KEY[&after=ID]  -> one-off: rebuild records + level 100 from stored raw_snapshots
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, STATS_ADMIN_KEY (only for backfill)
-import { rest, extractList } from './_lib/shared.js';
+import { rest, extractList, ID_RE } from './_lib/shared.js';
 import { loadStats, backfill, loadPeak, loadOnline, loadSamples, loadPlayers, backfillPlayers, roomTotals, addOnlineSample, updatePeak } from './_lib/records.js';
 import { leagueTick, loadLeague } from './_lib/league.js';
 
@@ -113,6 +115,18 @@ export default async function handler(req, res) {
         return res.status(401).json({ error: 'Set STATS_ADMIN_KEY in Vercel and pass it as ?key=' });
       res.setHeader('Cache-Control', 'no-store');
       return res.status(200).json(await backfill(Number(req.query.after) || 0));
+    }
+    if (req.query.mode === 'player-list') {       // Player Database page: the whole permanent `players` table (the page sorts and filters it)
+      const players = await rest('players?select=player_id,name,total_xp,top_weapon_id,clan_tag,clan_color,first_seen_at,last_seen_at&order=total_xp.desc.nullslast,player_id.asc', { all: true, max: 100000 });
+      res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
+      return res.status(200).json({ count: players.length, players });
+    }
+    if (req.query.mode === 'player') {            // one player's change history (names, clans, weapons)
+      const id = String(req.query.id || '');
+      if (!ID_RE.test(id)) return res.status(400).json({ error: 'bad player id' });
+      const history = await rest(`player_history?select=change_type,changes,observed_at&player_id=eq.${enc(id)}&order=observed_at.desc&limit=200`);
+      res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=900');
+      return res.status(200).json({ history });
     }
     if (req.query.mode === 'players') {           // id -> name lookup: /api/stats?mode=players&ids=id1,id2,...
       const ids = String(req.query.ids || '').split(',').map(x => x.trim()).filter(Boolean);
