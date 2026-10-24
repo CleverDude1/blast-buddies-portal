@@ -88,6 +88,23 @@ function gunRecordCard(id) {
   return topCard('gun_kills_' + id, { iconHtml: `<img src="${esc(wImg(id))}" alt="" onerror="${PH}">`, title: esc(wLabel(id)), sub: 'Most kills with this gun · top 3 · all time', list });
 }
 
+// ---------- most kills in a month (clan members; the API's clan archives only cover the top 20 clans of each month) ----------
+const monthName = p => { const [y, m] = String(p).split('-').map(Number); return y && m ? new Date(Date.UTC(y, m - 1, 1)).toLocaleString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }) : String(p); };
+function monthlyKillsCard() {
+  const list = stats?.monthlyKills || [];
+  const base = { icon: 'clans', title: 'Most kills in a month', sub: 'Top 3 players · all time · one month' };
+  const cutoff = '20 clan cutoff: only players in the top 20 clans of that month are counted.';
+  if (!list.length) return card('month_kills', { ...base, notes: [stats ? 'No monthly data yet' : waiting(), cutoff] });
+  const who = r => `<b>${esc(r.name)}</b> ${tagHtml(r.clan_tag, r.clan_color)}`;
+  const body = `<div class="st-recs">${list.slice(0, 3).map((r, i) => `<div class="st-rec"><b class="st-rank r${i + 1}">${i + 1}</b>
+      <div class="who">${who(r)}<small class="st-ok">${esc(monthName(r.period))} · clan #${r.clan_rank}</small></div><span class="val">${fmt(r.kills)}</span></div>`).join('')}</div>`;
+  return card('month_kills', { ...base, body, notes: [cutoff],
+    details: () => `<h3>Most kills in a month</h3><div class="muted">Top ${list.length} players, one entry per player (their best month). Kills are what the player made in that calendar month while in a clan that finished in the top 20 clans. Players in lower clans are not tracked by the API.</div>
+      <div class="st-list">${list.map((r, i) => `<div class="st-row" style="grid-template-columns:34px 1fr auto"><span class="n">${i + 1}</span>
+        <span class="nm" style="white-space:normal">${who(r)}<br><small class="muted">${esc(monthName(r.period))} · ${r.clan_name ? esc(r.clan_name) + ' · ' : ''}clan #${r.clan_rank}${r.level != null ? ' · level ' + esc(r.level) : ''}</small></span>
+        <span class="r"><b style="color:var(--text);font-size:17px">${fmt(r.kills)}</b> kills</span></div>`).join('')}</div>` });
+}
+
 // ---------- popular guns (top 3 of the top 100) ----------
 function gunCard(board, label) {
   const g = stats?.guns?.[board], list = g?.list || [], total = g?.total || 0;
@@ -274,7 +291,7 @@ function render() {
     recordCard('clan_kills', 'Highest clan kills', 'Top 3 · clans · all time', 'clans', true),
     recordCard('hour_gain_clan', 'Biggest clan gain in 1 hour', 'Top 3 · clan kills · all time', 'clans', true),
     recordCard('best_kdr', 'Best KDR of all time', 'Top 3 · at least 1,000 kills', 'compare'),
-    lifetimeKillsCard(), lifetimeKdrCard(),
+    lifetimeKillsCard(), lifetimeKdrCard(), monthlyKillsCard(),
     gunCard('day', 'Daily'), gunCard('week', 'Weekly'), gunCard('ranked', 'Ranked'),
     medalCard('medals_players', 'Highest medal rank', 'Top 3 players · by medal points', 'podium', false),
     medalCard('medals_clans', 'Highest medal rank', 'Top 3 clans · from their members', 'clans', true),
