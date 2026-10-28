@@ -25,6 +25,7 @@ const SOURCE = { day: 'leaderboard-day', week: 'leaderboard-week', ranked: 'lead
 // how many players per board are counted for "most popular guns" (ranked has 500; rows without a weapon are skipped)
 const GUN_ROWS = { day: 100, week: 100, ranked: 500 };
 // weapon ids with a lifetime "most kills" list (matches js/weapon-names.js; 101 = knife)
+const MIN_ROOMS = 100;   // "average kills per room" only counts players with at least this many games, so one lucky game cannot top it
 const WEAPON_IDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 101];
 const enc = encodeURIComponent;
 
@@ -56,11 +57,12 @@ async function gunsFromStored(boards) {
 // top 3 lifetime kills, top 3 lifetime KDR (min 1,000 kills) and top 3 kills with each gun, from `players` / player_weapon_stats.
 // Each list falls back to [] on its own, so the page still works before sql/players_extend.sql has been run.
 async function loadLifetime() {
-  const cols = 'player_id,name,clan_tag,clan_color,kills,deaths,games,kdr';
+  const cols = 'player_id,name,clan_tag,clan_color,kills,deaths,games,kdr,kills_per_game';
   const safe = p => p.catch(e => { console.error('lifetime query failed:', e.message); return []; });
-  const [kills, kdr, ...perGun] = await Promise.all([
+  const [kills, kdr, kpg, ...perGun] = await Promise.all([
     safe(rest(`players?select=${cols}&kills=not.is.null&order=kills.desc&limit=3`)),
     safe(rest(`players?select=${cols}&kills=gte.1000&order=kdr.desc&limit=3`)),
+    safe(rest(`players?select=${cols}&games=gte.${MIN_ROOMS}&kills_per_game=not.is.null&order=kills_per_game.desc.nullslast&limit=10`)),
     ...WEAPON_IDS.map(id => safe(rest(
       `player_weapon_stats?select=player_id,kills,headshots,players(name,clan_tag,clan_color)&weapon_id=eq.${id}&kills=gt.0&order=kills.desc&limit=3`))),
   ]);
@@ -69,7 +71,7 @@ async function loadLifetime() {
     weapons[id] = (perGun[i] || []).map(r => ({ player_id: r.player_id, kills: r.kills, headshots: r.headshots,
       name: r.players?.name ?? r.player_id, clan_tag: r.players?.clan_tag ?? '', clan_color: r.players?.clan_color ?? null }));
   });
-  return { kills, kdr, weapons };
+  return { kills, kdr, kpg, kpgMinGames: MIN_ROOMS, weapons };
 }
 
 // top 10 players by kills in a single month (one entry per player = their best month), from monthly_player_kills.
