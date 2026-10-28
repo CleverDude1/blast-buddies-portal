@@ -98,6 +98,7 @@ function toLifetime(raw) {
     p: { player_id: raw.playerId, clan_id: raw.clanId || null, level: raw.level ?? null,
          kills: k, deaths: d, assists: Number(st.assists) || 0, games: Number(st.games) || 0,
          kdr: Math.round((d > 0 ? k / d : k) * 10000) / 10000,
+         kills_per_game: Number(st.games) > 0 ? Math.round(k / Number(st.games) * 10000) / 10000 : null,   // average kills per room
          seasons: Array.isArray(raw.seasons) ? raw.seasons : [] },
     w: (Array.isArray(raw.weaponStats) ? raw.weaponStats : [])
       .filter(x => x && x.weaponId != null && Number(x.kills) > 0)
