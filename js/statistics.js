@@ -82,6 +82,20 @@ function lifetimeKdrCard() {
   const list = (stats?.lifetime?.kdr || []).map(r => ({ ...r, value: Number(r.kdr).toFixed(2), note: `${fmt(r.kills)} kills · ${fmt(r.deaths)} deaths` }));
   return topCard('life_kdr', { icon: 'compare', title: 'Best lifetime KDR', sub: 'Top 3 · all modes · at least 1,000 kills', list });
 }
+// average kills per room = lifetime kills / games played. Top 3 on the card, top 10 in the details.
+function kpgCard() {
+  const lt = stats?.lifetime, list = lt?.kpg || [], min = lt?.kpgMinGames || 100;
+  const base = { icon: 'compare', title: 'Average kills per room', sub: `Top 3 · lifetime · at least ${fmt(min)} rooms played` };
+  if (!list.length) return card('kpg', { ...base, notes: [stats ? 'No data yet' : waiting()] });
+  const f = v => Number(v).toFixed(2), who = r => `<b>${esc(r.name)}</b> ${tagHtml(r.clan_tag, r.clan_color)}`;
+  const body = `<div class="st-recs">${list.slice(0, 3).map((r, i) => `<div class="st-rec"><b class="st-rank r${i + 1}">${i + 1}</b>
+      <div class="who">${who(r)}<small class="st-ok">${fmt(r.kills)} kills in ${fmt(r.games)} rooms</small></div><span class="val">${f(r.kills_per_game)}</span></div>`).join('')}</div>`;
+  return card('kpg', { ...base, body,
+    details: () => `<h3>Average kills per room</h3><div class="muted">Lifetime kills divided by rooms (games) played, all modes. Only players with at least ${fmt(min)} rooms are counted, so a few lucky games cannot top the list.</div>
+      <div class="st-list">${list.map((r, i) => `<div class="st-row" style="grid-template-columns:34px 1fr auto"><span class="n">${i + 1}</span>
+        <span class="nm" style="white-space:normal">${who(r)}<br><small class="muted">${fmt(r.kills)} kills · ${fmt(r.deaths)} deaths · ${fmt(r.games)} rooms · ${r.games ? (r.deaths / r.games).toFixed(2) : '-'} deaths per room</small></span>
+        <span class="r"><b style="color:var(--text);font-size:17px">${f(r.kills_per_game)}</b> / room</span></div>`).join('')}</div>` });
+}
 function gunRecordCard(id) {
   const list = (stats?.lifetime?.weapons?.[id] || []).map(r => ({ ...r, value: fmt(r.kills),
     note: id === 101 ? '' : `${fmt(r.headshots)} headshots${r.kills ? ` (${(r.headshots / r.kills * 100).toFixed(0)}%)` : ''}` }));
@@ -291,7 +305,7 @@ function render() {
     recordCard('clan_kills', 'Highest clan kills', 'Top 3 · clans · all time', 'clans', true),
     recordCard('hour_gain_clan', 'Biggest clan gain in 1 hour', 'Top 3 · clan kills · all time', 'clans', true),
     recordCard('best_kdr', 'Best KDR of all time', 'Top 3 · at least 1,000 kills', 'compare'),
-    lifetimeKillsCard(), lifetimeKdrCard(), monthlyKillsCard(),
+    lifetimeKillsCard(), lifetimeKdrCard(), kpgCard(), monthlyKillsCard(),
     gunCard('day', 'Daily'), gunCard('week', 'Weekly'), gunCard('ranked', 'Ranked'),
     medalCard('medals_players', 'Highest medal rank', 'Top 3 players · by medal points', 'podium', false),
     medalCard('medals_clans', 'Highest medal rank', 'Top 3 clans · from their members', 'clans', true),
