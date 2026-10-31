@@ -8,6 +8,7 @@ const CONFIG = {
 };
 // Daily, weekly, ranked seasons, clans and clan history all live on ONE page (daily-rankings.html), so the
 // pages share a single API request. Its id stays 'daily' (the page's data-page) so the icon and highlight keep working.
+// An entry with id '#' is not a page: it is a section heading in the sidebar (everything below it belongs to that section).
 const NAV = [
   ['home','Home','index.html'],
   ['daily','Rankings','daily-rankings.html'],
@@ -16,15 +17,17 @@ const NAV = [
   ['compare','Compare','compare.html'],
   ['player-updates','Player Updates','player-updates.html'],
   ['clan-updates','Clan Updates','clan-updates.html'],
-  ['statistics','Statistics','statistics.html'],
-  ['activity','Player Activity','player-activity.html'],
   ['player-database','Player Database','players.html'],
   ['maps','Maps','maps.html'],
   ['weapons','Weapons','weapons.html'],
   ['abilities','Abilities','abilities.html'],
   ['xp','XP Calculator','xp.html'],
   ['vote','Community Vote','vote.html'],
-  ['updates','Updates','updates.html']
+  ['updates','Updates','updates.html'],
+  ['#','Analytics'],
+  ['statistics','Statistics','statistics.html'],
+  ['activity','Player Activity','player-activity.html'],
+  ['performance','Player Performance','performance.html']
 ];
 const page = document.body.dataset.page;
 const icon = id => `<img src="images/icons/${id}.png" alt="" onerror="this.onerror=null;this.src='images/placeholder.png'">`;
@@ -37,7 +40,7 @@ document.body.insertAdjacentHTML('afterbegin', `
   </a>
   <div class="side-scroll">
     <nav class="nav">
-      ${NAV.map(([id,label,href]) => `<a href="${href}" class="${id===page?'active':''}">${icon(id)}${label}</a>`).join('')}
+      ${NAV.map(([id,label,href]) => id === '#' ? `<div class="nav-label">${label}</div>` : `<a href="${href}" class="${id===page?'active':''}">${icon(id)}${label}</a>`).join('')}
     </nav>
     <section class="hr" id="hr"><h4><span id="hrTitle">PAST HOUR</span> <small id="hrAt"></small></h4><div id="hrBody"><p class="hr-note">Loading...</p></div></section>
   </div>
@@ -78,9 +81,9 @@ lang.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => {
 });
 try { const s = localStorage.getItem('lang'); if (s) setFlag(s); } catch (e) {}
 
-// Home page grid reuses the same buttons as the sidebar
+// Home page grid reuses the same buttons as the sidebar (section headings are skipped)
 const grid = document.getElementById('explore');
-if (grid) grid.innerHTML = NAV.filter(n => n[0] !== 'home')
+if (grid) grid.innerHTML = NAV.filter(n => n[0] !== 'home' && n[0] !== '#')
   .map(([id,label,href]) => `<a class="card-link" href="${href}">${icon(id)}${label}<i>›</i></a>`).join('');
 
 // ---- "Past hour" panel under the menu (inside a function so its names cannot clash with page scripts) ----
