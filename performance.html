@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Player Performance | Blast Buddies Tracker</title>
+<link rel="icon" href="images/icons/home.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="performance">
+<template id="page-content">
+<section class="panel"><h1 class="page-title">Player Performance</h1>
+  <p class="muted">All-time records, one entry per player (their personal best). Records are tracked from the hourly data, so they only cover the time since tracking started.</p></section>
+<div class="toolbar">
+  <input class="search" id="pfSearch" placeholder="Search for a player or clan">
+  <div class="seg" id="pfTabs"></div>
+</div>
+<div class="status" id="pfStatus"></div>
+<p class="muted pf-note" id="pfNote"></p>
+<div class="board"><div class="board-inner">
+  <div class="lb-row lb-head pf-row"><span class="rank">#</span><span id="pfWho">Player</span><span id="pfVal">Value</span><span>Achieved</span></div>
+  <div id="pfRows"></div>
+</div></div>
+<button class="pill cu-more" id="pfMore" hidden>Show more</button>
+</template>
+<script src="js/layout.js"></script>
+<script>
+(() => {
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const num = n => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const when = iso => { const d = new Date(iso), p = n => String(n).padStart(2, '0'); return `${p(d.getMonth() + 1)}/${p(d.getDate())}/${d.getFullYear()}`; };
+  const STEP = 50;
+  let data, cur = 'daily_kills', shown = STEP, q = '';
+  const rows = document.getElementById('pfRows'), more = document.getElementById('pfMore'), status = document.getElementById('pfStatus');
+
+  const detail = (id, r) => {
+    const x = r.extra || {};
+    if (id === 'month_kills') return [x.clan, x.month].filter(Boolean).map(esc).join(' · ');
+    if (x.from !== undefined) return `${num(x.from)} → ${num(x.to)}`;
+    return '';
+  };
+  function draw() {
+    const m = data.meta[cur], list = (data.boards[cur] || []).filter(r => !q || `${r.name} ${r.tag}`.toLowerCase().includes(q));
+    document.getElementById('pfNote').textContent = m.note;
+    document.getElementById('pfWho').textContent = cur === 'gain_clan' ? 'Clan' : 'Player';
+    document.getElementById('pfVal').textContent = cur.startsWith('gain_') ? `+${m.unit}` : m.unit[0].toUpperCase() + m.unit.slice(1);
+    rows.innerHTML = list.slice(0, shown).map((r, i) => {
+      const sub = detail(cur, r), plus = cur.startsWith('gain_') ? '+' : '';
+      return `<div class="lb-row pf-row"><span class="rank">${i + 1}</span>
+        <span class="pname">${r.tag ? `[${esc(r.tag)}] ` : ''}${esc(r.name || r.entity_id)}${sub ? ` <small class="muted">${sub}</small>` : ''}</span>
+        <span><b>${plus}${num(r.value)}</b></span><span class="muted">${when(r.achieved_at)}</span></div>`;
+    }).join('');
+    more.hidden = list.length <= shown;
+    status.textContent = list.length ? '' : 'No records yet for this board.';
+  }
+  async function init() {
+    status.textContent = 'Loading...';
+    try {
+      const r = await fetch('/api/hourly?mode=performance'); if (!r.ok) throw new Error();
+      data = await r.json();
+      document.getElementById('pfTabs').innerHTML = Object.entries(data.meta).map(([id, m]) => `<button data-b="${id}" class="${id === cur ? 'on' : ''}">${esc(m.title)}</button>`).join('');
+      draw();
+    } catch (e) { status.textContent = 'Could not load records. Please try again later.'; }
+  }
+  document.getElementById('pfTabs').addEventListener('click', e => {
+    const b = e.target.closest('[data-b]'); if (!b) return;
+    cur = b.dataset.b; shown = STEP; document.querySelectorAll('#pfTabs button').forEach(x => x.classList.toggle('on', x === b)); draw();
+  });
+  document.getElementById('pfSearch').addEventListener('input', e => { q = e.target.value.trim().toLowerCase(); shown = STEP; if (data) draw(); });
+  more.onclick = () => { shown += STEP; draw(); };
+  init();
+})();
+</script>
+</body>
+</html>
