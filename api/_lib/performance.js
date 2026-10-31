@@ -1,145 +1,153 @@
-// Player Performance. Personal-best records (one row per player/clan per board) kept in the perf_records table.
-//   performanceRead()          -> every board, top 200 each (the page)
-//   performanceRecord()        -> compares the two newest stored snapshots of each board and bumps records (run hourly, after collect)
-//   performanceBackfill(date)  -> same, but walks every stored snapshot of one UTC day (YYYY-MM-DD) to fill in history
-// Never calls the Pangolin API: it only reads raw_snapshots. Env vars: SUPABASE_URL, SUPABASE_SECRET_KEY
-import { extractList, normPlayer, normClan } from './shared.js';
+// Player Performance page data.
+//   Six boards are RECORDS kept in the perf_records table (one row per player/clan = their personal best, no top-3 limit):
+//     daily_kills, weekly_kills, gain_day, gain_week, gain_ranked, gain_clan
+//     collectPerformance(items) + commitPerformance(acc) are called from api/collect.js with the same items the records step uses.
+//   Two boards are READ from tables collect.js already fills:
+//     lifetime_kdr  <- players (kills, deaths, kdr from saveLifetime)
+//     month_kills   <- monthly_player_kills (from saveMonthlyKills, top 20 clans of each month)
+//   performanceBackfill(after) rebuilds the six record boards from stored raw_snapshots (same cursor style as records.js backfill).
+// Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY
+import { extractList } from './shared.js';
 
-const SB = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SECRET_KEY;
+const SB = (process.env.SUPABASE_URL || '').replace(/\/+$/, ''), KEY = process.env.SUPABASE_SECRET_KEY;
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' };
-const enc = encodeURIComponent, MIN = 60e3, DAY = 864e5;
+const enc = encodeURIComponent, MIN = 60e3;
+
+const KDR_MIN_KILLS = 1000;       // lifetime KDR board only counts players with at least this many lifetime kills
+const GAP = [50, 70];             // "1 hour" = two snapshots 50-70 minutes apart (same as records.js)
+const LIMIT = 200;                // rows per board sent to the page
 
 // shown on the page, in this order
 export const BOARDS = {
-  daily_kills:  { title: 'Highest daily kills',        unit: 'kills',    cutoff: 1000, note: 'Best single day. Minimum 1,000 kills.' },
-  weekly_kills: { title: 'Highest weekly kills',       unit: 'kills',    cutoff: 3000, note: 'Best single week. Minimum 3,000 kills.' },
-  gain_day:     { title: '1-hour gain: Daily',         unit: 'kills',    cutoff: 200,  note: 'Most kills gained in one hour on the daily board. Minimum +200.' },
-  gain_week:    { title: '1-hour gain: Weekly',        unit: 'kills',    cutoff: 200,  note: 'Most kills gained in one hour on the weekly board. Minimum +200.' },
-  gain_ranked:  { title: '1-hour gain: Ranked',        unit: 'trophies', cutoff: 200,  note: 'Most trophies gained in one hour. Minimum +200.' },
-  gain_clan:    { title: '1-hour gain: Clans',         unit: 'kills',    cutoff: 400,  note: 'Most clan kills gained in one hour. Minimum +400.' },
-  month_kills:  { title: 'Most kills in a month',      unit: 'kills',    cutoff: 0,    note: 'From the top 20 clans only: every player in those clans is counted.' },
-  // lifetime_kdr: added once we know where lifetime kills/deaths live
+  daily_kills:  { title: 'Highest daily kills',   unit: 'kills',    note: 'Best single day per player. Minimum 1,000 kills.' },
+  weekly_kills: { title: 'Highest weekly kills',  unit: 'kills',    note: 'Best single week per player. Minimum 3,000 kills.' },
+  gain_day:     { title: '1-hour gain: Daily',    unit: 'kills',    note: 'Most kills gained in about one hour on the daily board. Minimum +200.' },
+  gain_week:    { title: '1-hour gain: Weekly',   unit: 'kills',    note: 'Most kills gained in about one hour on the weekly board. Minimum +200.' },
+  gain_ranked:  { title: '1-hour gain: Ranked',   unit: 'trophies', note: 'Most trophies gained in about one hour. Minimum +200.' },
+  gain_clan:    { title: '1-hour gain: Clans',    unit: 'kills',    note: 'Most clan kills gained in about one hour. Minimum +400.' },
+  lifetime_kdr: { title: 'Best lifetime KDR',     unit: 'KDR',      note: `Lifetime kills divided by deaths. Minimum ${KDR_MIN_KILLS.toLocaleString('en-US')} lifetime kills. Only players who have appeared on a leaderboard are included.` },
+  month_kills:  { title: 'Most kills in a month', unit: 'kills',    note: 'From the top 20 clans of each month only: every player in those clans is counted. Best month per player.' },
 };
 
-const SRC = { day: 'leaderboard-day', week: 'leaderboard-week', ranked: 'leaderboard-ranked', clan: 'clan' };
-const CFG = {
-  day:    { kind: 'player', metric: 'kills',    value: 'daily_kills',  vmin: 1000, gain: 'gain_day' },
-  week:   { kind: 'player', metric: 'kills',    value: 'weekly_kills', vmin: 3000, gain: 'gain_week' },
-  ranked: { kind: 'player', metric: 'trophies', gain: 'gain_ranked' },
-  clan:   { kind: 'clan',   metric: 'kills',    gain: 'gain_clan' },
+const KILL_RECORDS = { day: ['daily_kills', 1000], week: ['weekly_kills', 3000] };
+const GAINS = {
+  day:    { key: 'gain_day',    metric: 'kills',    min: 200 },
+  week:   { key: 'gain_week',   metric: 'kills',    min: 200 },
+  ranked: { key: 'gain_ranked', metric: 'trophies', min: 200 },
+  clan:   { key: 'gain_clan',   metric: 'kills',    min: 400 },
 };
-const GAIN_MIN = { gain_day: 200, gain_week: 200, gain_ranked: 200, gain_clan: 400 };
-const GAP = [40, 80];            // minutes between two snapshots that still count as "1 hour"
-const ARCHIVE_SOURCE = 'clan';   // raw_snapshots source whose payload holds the clan member lists
-const TOP_CLANS = 20;
 
 async function get(path) {
   const r = await fetch(`${SB}/rest/v1/${path}`, { headers: H });
-  if (!r.ok) throw new Error(await r.text());
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return r.json();
 }
-const toRows = (kind, payload) => {
-  const list = extractList(payload, kind === 'clan' ? 'clanId' : 'playerId');
-  return list ? list.map(kind === 'clan' ? normClan : normPlayer) : null;
-};
-const newest = async (source, n) => (await get(`raw_snapshots?select=fetched_at,payload&source=eq.${enc(source)}&order=fetched_at.desc&limit=${n}`))
-  .map(r => ({ at: Date.parse(r.fetched_at), payload: r.payload }));
-async function between(source, fromMs, toMs) {          // every stored snapshot in [from, to), oldest first
-  const metas = await get(`raw_snapshots?select=id,fetched_at&source=eq.${enc(source)}&fetched_at=gte.${enc(new Date(fromMs).toISOString())}&fetched_at=lt.${enc(new Date(toMs).toISOString())}&order=fetched_at.asc&limit=1000`);
-  const at = new Map(metas.map(m => [String(m.id), m.fetched_at])), out = [];
-  for (let i = 0; i < metas.length; i += 6) {
-    const ids = metas.slice(i, i + 6).map(m => m.id);
-    for (const r of await get(`raw_snapshots?select=id,payload&id=in.(${ids.join(',')})`)) out.push({ at: Date.parse(at.get(String(r.id))), payload: r.payload });
-  }
-  return out.sort((a, b) => a.at - b.at);
-}
 
-// ---- turn two snapshots (a = older or null, b = newer) into record candidates ----
-function candidates(board, a, b) {
-  const c = CFG[board], id = c.kind === 'clan' ? 'clan_id' : 'player_id', rows = toRows(c.kind, b.payload), out = [];
-  if (!rows) return out;
-  const at = new Date(b.at).toISOString();
-  const mk = (boardId, r, value, extra) => out.push({ board: boardId, entity_id: String(r[id]), name: r.name ?? null,
-    tag: r.clan_tag ?? r.tag ?? null, color: r.clan_color ?? r.color ?? null, value, achieved_at: at, extra: extra ?? null });
-  if (c.value) for (const r of rows) { const v = Number(r[c.metric]) || 0; if (v >= c.vmin) mk(c.value, r, v); }
-  const dt = a ? (b.at - a.at) / MIN : 0, before = a && toRows(c.kind, a.payload);
-  if (before && dt >= GAP[0] && dt <= GAP[1]) {
-    const prev = new Map(before.map(r => [String(r[id]), Number(r[c.metric]) || 0]));
-    let both = 0, down = 0;
-    for (const r of rows) { const p = prev.get(String(r[id])); if (p !== undefined) { both++; if ((Number(r[c.metric]) || 0) < p) down++; } }
-    if (!(both && down / both > 0.5)) {                   // skip pairs that straddle a board reset
-      for (const r of rows) {
-        const p = prev.get(String(r[id])); if (p === undefined) continue;   // just entered the list: real gain unknown
-        const v = Number(r[c.metric]) || 0, g = v - p;
-        if (g >= GAIN_MIN[c.gain]) mk(c.gain, r, g, { from: p, to: v });
+// items: [{ board: 'day'|'week'|'ranked'|'clan', payload, at (ms), prevPayload?, prevAt? }]  (same items the records step builds)
+export function collectPerformance(items, acc = new Map()) {
+  for (const { board, payload, at, prevPayload, prevAt } of items) {
+    if (!payload) continue;
+    const when = new Date(at).toISOString(), clan = board === 'clan', idk = clan ? 'clanId' : 'playerId', list = extractList(payload, idk) || [];
+    const who = p => clan ? { id: p.clanId, name: p.name, tag: p.tag || null, color: p.color ?? null }
+                          : { id: p.playerId, name: p.name, tag: p.clanTag || null, color: p.clanColor ?? null };
+    const offer = (key, value, p, extra) => {
+      const w = who(p); if (!w.id || !Number.isFinite(value)) return;
+      const k = key + '|' + w.id, o = acc.get(k);
+      if (!o || value > o.value) acc.set(k, { board: key, entity_id: String(w.id), name: w.name ?? null, tag: w.tag, color: w.color, value, achieved_at: when, extra: extra ?? null });
+    };
+    const kr = KILL_RECORDS[board];
+    if (kr) for (const p of list) { const v = Number(p.kills); if (v >= kr[1]) offer(kr[0], v, p); }
+
+    const g = GAINS[board], gap = prevAt == null ? NaN : (at - prevAt) / MIN;
+    if (g && prevPayload && gap >= GAP[0] && gap <= GAP[1]) {
+      const prev = new Map((extractList(prevPayload, idk) || []).map(p => [p[idk], Number(p[g.metric])]));
+      let both = 0, down = 0;
+      for (const p of list) { const b = prev.get(p[idk]); if (b !== undefined) { both++; if (Number(p[g.metric]) < b) down++; } }
+      if (!(both && down / both > 0.5)) {                       // skip pairs that straddle a board reset
+        for (const p of list) {
+          const b = prev.get(p[idk]); if (b === undefined) continue;   // not on the earlier list: real gain unknown
+          const v = Number(p[g.metric]), gain = v - b;
+          if (gain >= g.min) offer(g.key, gain, p, { from: b, to: v });
+        }
       }
     }
   }
-  return out;
+  return acc;
 }
 
-// ---- monthly kills: every player of the top 20 clans in the clan snapshot that carries member lists ----
-function monthly(snap) {
-  const clans = [];
-  const walk = o => {
-    if (!o || typeof o !== 'object') return;
-    if (Array.isArray(o)) return o.forEach(walk);
-    if (Array.isArray(o.members) && o.members.some(m => m && m.playerId)) clans.push(o);
-    for (const v of Object.values(o)) if (v && typeof v === 'object') walk(v);
+// writes only rows that beat the stored personal best (SQL function perf_bump, see performance.sql)
+export async function commitPerformance(acc) {
+  const rows = [...acc.values()];
+  for (let i = 0; i < rows.length; i += 500) {
+    const r = await fetch(`${SB}/rest/v1/rpc/perf_bump`, { method: 'POST', headers: H, body: JSON.stringify({ rows: rows.slice(i, i + 500) }) });
+    if (!r.ok) throw new Error(`perf_bump ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  }
+  return { candidates: rows.length };
+}
+
+// Rebuild the six record boards from stored snapshots. Walks raw_snapshots by id for ~40 s, then returns where to continue (call again with after=next).
+const SOURCE_BOARD = { 'leaderboard-day': 'day', 'leaderboard-week': 'week', 'leaderboard-ranked': 'ranked', clan: 'clan' };
+export async function performanceBackfill(after = 0, budgetMs = 40000) {
+  const t0 = Date.now(), acc = new Map(), buf = {};
+  const prevFor = (board, at) => {
+    let best = null;
+    for (const p of buf[board] || []) { const g = (at - p.at) / MIN; if (g >= GAP[0] && g <= GAP[1] && (!best || Math.abs(g - 60) < Math.abs((at - best.at) / MIN - 60))) best = p; }
+    return best;
   };
-  walk(snap.payload);
-  const uniq = new Map();
-  for (const c of clans) { const k = c.clanId ?? c.tag; if (!uniq.has(k) || (c.kills || 0) > (uniq.get(k).kills || 0)) uniq.set(k, c); }
-  const top = [...uniq.values()].sort((a, b) => (b.kills || 0) - (a.kills || 0)).slice(0, TOP_CLANS);
-  const d = new Date(snap.at), month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`, at = d.toISOString(), out = [];
-  for (const c of top) for (const m of c.members) if (m?.playerId && Number(m.kills) > 0)
-    out.push({ board: 'month_kills', entity_id: String(m.playerId), name: m.name ?? null, tag: c.tag ?? null, color: c.color ?? null,
-      value: Number(m.kills), achieved_at: at, extra: { clan: c.name ?? null, month } });
-  return out;
+  const remember = (board, at, payload) => { (buf[board] ||= []).push({ at, payload }); buf[board] = buf[board].filter(p => p.at >= at - (GAP[1] + 5) * MIN); };
+  if (after > 0) {   // continuing: reload the last ~75 minutes before the cursor so the first 1-hour gains are not lost
+    const [r0] = await get(`raw_snapshots?select=fetched_at&id=eq.${after}`);
+    if (r0) {
+      const lo = new Date(Date.parse(r0.fetched_at) - (GAP[1] + 5) * MIN).toISOString();
+      for (const r of await get(`raw_snapshots?select=id,source,fetched_at,payload&id=lte.${after}&fetched_at=gte.${enc(lo)}&order=id.asc&limit=300`))
+        if (SOURCE_BOARD[r.source]) remember(SOURCE_BOARD[r.source], Date.parse(r.fetched_at), r.payload);
+    }
+  }
+  let cursor = after, done = false, seen = 0;
+  while (Date.now() - t0 < budgetMs) {
+    const rows = await get(`raw_snapshots?select=id,source,fetched_at,payload&id=gt.${cursor}&order=id.asc&limit=20`);
+    if (!rows.length) { done = true; break; }
+    const items = [];
+    for (const r of rows) {
+      cursor = r.id; seen++;
+      const board = SOURCE_BOARD[r.source]; if (!board) continue;
+      const at = Date.parse(r.fetched_at), prev = prevFor(board, at);
+      items.push({ board, payload: r.payload, at, prevPayload: prev?.payload, prevAt: prev?.at });
+      remember(board, at, r.payload);
+    }
+    collectPerformance(items, acc);
+  }
+  await commitPerformance(acc);
+  return { done, next: cursor, snapshotsScanned: seen, recordsFound: acc.size };
 }
 
-async function bump(rows) {
-  const best = new Map();                                  // one row per board+entity per call (a single upsert can't touch a row twice)
-  for (const r of rows) { const k = `${r.board}|${r.entity_id}`, o = best.get(k); if (!o || r.value > o.value) best.set(k, r); }
-  const list = [...best.values()];
-  for (let i = 0; i < list.length; i += 500) {
-    const r = await fetch(`${SB}/rest/v1/rpc/perf_bump`, { method: 'POST', headers: H, body: JSON.stringify({ rows: list.slice(i, i + 500) }) });
-    if (!r.ok) throw new Error(await r.text());
-  }
-  return list.length;
+// ---------------- reading (the page) ----------------
+const num = n => Number(n).toLocaleString('en-US');
+async function recordBoard(id) {
+  const rows = await get(`perf_records?select=entity_id,name,tag,color,value,achieved_at,extra&board=eq.${id}&order=value.desc&limit=${LIMIT}`);
+  return rows.map(r => ({ id: r.entity_id, name: r.name, tag: r.tag, color: r.color, value: Number(r.value), achieved_at: r.achieved_at,
+    detail: r.extra?.from !== undefined ? `${num(r.extra.from)} → ${num(r.extra.to)}` : '' }));
 }
-
-export async function performanceRecord() {
-  const rows = [], seen = {};
-  for (const board of Object.keys(CFG)) {
-    const s = await newest(SRC[board], 2);
-    if (!s.length) { seen[board] = 0; continue; }
-    const c = candidates(board, s[1] ?? null, s[0]);
-    seen[board] = c.length; rows.push(...c);
-  }
-  const arch = ARCHIVE_SOURCE === SRC.clan ? (await newest(SRC.clan, 1))[0] : (await newest(ARCHIVE_SOURCE, 1))[0];
-  const m = arch ? monthly(arch) : [];
-  seen.month_kills = m.length; rows.push(...m);
-  return { candidates: seen, written: await bump(rows) };
+async function kdrBoard() {
+  const rows = await get(`players?select=player_id,name,clan_tag,clan_color,kills,deaths,games,kdr&kdr=not.is.null&kills=gte.${KDR_MIN_KILLS}&order=kdr.desc&limit=${LIMIT}`);
+  return rows.map(r => ({ id: r.player_id, name: r.name, tag: r.clan_tag, color: r.clan_color, value: Number(r.kdr), whenText: 'Lifetime',
+    detail: `${num(r.kills)} kills / ${num(r.deaths)} deaths` }));
 }
-
-export async function performanceBackfill(dateStr) {
-  const mt = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || '');
-  if (!mt) throw new Error('date=YYYY-MM-DD required');
-  const start = Date.UTC(+mt[1], +mt[2] - 1, +mt[3]), end = start + DAY, rows = [], seen = {};
-  for (const board of Object.keys(CFG)) {
-    const snaps = await between(SRC[board], start, end);
-    seen[board] = snaps.length;
-    snaps.forEach((s, i) => rows.push(...candidates(board, snaps[i - 1] ?? null, s)));
-    if (board === 'clan') snaps.forEach(s => rows.push(...monthly(s)));
+async function monthBoard() {
+  const rows = await get(`monthly_player_kills?select=period,player_id,name,kills,clan_tag,clan_color,clan_name&order=kills.desc&limit=${LIMIT * 2}`);
+  const seen = new Set(), out = [];
+  for (const r of rows) {                                   // best month per player
+    if (seen.has(r.player_id)) continue; seen.add(r.player_id);
+    out.push({ id: r.player_id, name: r.name, tag: r.clan_tag, color: r.clan_color, value: Number(r.kills), whenText: String(r.period), detail: r.clan_name || '' });
   }
-  return { date: dateStr, snapshots: seen, written: await bump(rows) };
+  return out.slice(0, LIMIT);
 }
 
 export async function performanceRead() {
-  const boards = {};
+  const boards = {}, errors = {};
   await Promise.all(Object.keys(BOARDS).map(async id => {
-    boards[id] = await get(`perf_records?select=entity_id,name,tag,color,value,achieved_at,extra&board=eq.${id}&order=value.desc&limit=200`);
+    try { boards[id] = id === 'lifetime_kdr' ? await kdrBoard() : id === 'month_kills' ? await monthBoard() : await recordBoard(id); }
+    catch (e) { boards[id] = []; errors[id] = e.message; console.error(`performance ${id} failed:`, e.message); }
   }));
-  return { generatedAt: new Date().toISOString(), meta: BOARDS, boards };
+  return { generatedAt: new Date().toISOString(), meta: BOARDS, boards, errors };
 }
