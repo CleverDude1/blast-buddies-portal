@@ -4,8 +4,8 @@
 //   /api/hourly?mode=clan-updates&kind=all|left|joined|renamed|access|color&q=&offset=   -> Clan Updates feed
 //   /api/hourly?mode=vote                                             -> Community Vote (GET = status/results, POST = submit ballot)
 //   /api/hourly?mode=performance                                      -> Player Performance records (all boards)
-//   /api/hourly?mode=perf-record                                      -> (needs Authorization: Bearer CRON_SECRET) update records from the newest snapshots
-//   /api/hourly?mode=perf-backfill&date=YYYY-MM-DD                    -> (needs Authorization: Bearer CRON_SECRET) rebuild records from one stored UTC day
+//   /api/hourly?mode=perf-backfill&after=0                            -> (needs Authorization: Bearer <YOUR_ACTUAL_CRON_SECRET>) rebuild Player Performance records
+//                                                                        from stored snapshots; repeat with after=<next> until done:true
 //
 // DATA SOURCE: the old per-board APIs are gone. The collector (api/collect.js) fetches the combined Pangolin API once an hour and
 // stores one snapshot per board in raw_snapshots (source = leaderboard-day | leaderboard-week | leaderboard-ranked | clan).
@@ -29,12 +29,12 @@
 //   - a board that reset between two snapshots (daily, weekly, and the monthly clan board): values since the reset are counted
 // The DAILY board is the exception for span=day: it starts at 0 at 00:00 UTC, so a player's value IS what they gained that day.
 // For span=week and span=month the DAILY board is summed per UTC day: each day's last seen value is added up (partial = missing from the list on some days).
-// Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, VOTE_SALT, CRON_SECRET
+// Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, VOTE_SALT, YOUR_ACTUAL_CRON_SECRET
 import { rest, extractList, normPlayer, normClan } from './_lib/shared.js';
 import { clanUpdates } from './_lib/clan-updates.js';
 import { playerUpdates } from './_lib/player-updates.js';
 import voteHandler from './_lib/vote.js';
-import { performanceRead, performanceRecord, performanceBackfill } from './_lib/performance.js';
+import { performanceRead, performanceBackfill } from './_lib/performance.js';
 
 // a week or month summary reads a lot of snapshots; give Vercel more time (remove if your plan does not allow it)
 export const config = { maxDuration: 60 };
@@ -238,11 +238,12 @@ export default async function handler(req, res) {
     // Community Vote has its own cookie, status codes and caching, so it answers the request itself
     if (req.query.mode === 'vote') return voteHandler(req, res);
 
-    // Player Performance record keeping: only the hourly workflow (or you, with the secret) may run these
-    if (req.query.mode === 'perf-record' || req.query.mode === 'perf-backfill') {
-      if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) return res.status(401).json({ error: 'unauthorized' });
+    // Player Performance backfill (rebuilds the record boards from stored snapshots). Records are normally written by api/collect.js.
+    if (req.query.mode === 'perf-backfill') {
+      const secret = process.env.YOUR_ACTUAL_CRON_SECRET;      // same secret api/collect.js checks
+      if (!secret || req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: 'unauthorized' });
       res.setHeader('Cache-Control', 'no-store');
-      return res.status(200).json(req.query.mode === 'perf-record' ? await performanceRecord() : await performanceBackfill(req.query.date));
+      return res.status(200).json(await performanceBackfill(Number(req.query.after) || 0));
     }
 
     const { mode, board } = req.query;
