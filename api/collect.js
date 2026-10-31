@@ -1,6 +1,7 @@
 import { recordPlayerUpdates } from './_lib/player-updates.js';
 import { recordClanUpdates } from './_lib/clan-updates.js';
 import { collect as collectRecords, commit as commitRecords, hourAgo } from './_lib/records.js';
+import { collectPerformance, commitPerformance } from './_lib/performance.js';
 import { createClient } from '@supabase/supabase-js';
 import { SOURCES, BOARDS } from './_sources/index.js';
 import {
@@ -159,6 +160,7 @@ export default async function handler(req, res) {
   await step('playerUpdates', () => recordPlayerUpdates());
 
   // Statistics page records (all-time highs, best KDR, biggest gain in 1 hour). Compares each board with the snapshot from ~1 hour ago.
+  // The same items also feed the Player Performance records (perf_records), so the 1-hour snapshots are only fetched once.
   await step('records', async () => {
     const nowMs = Date.parse(now), items = [];
     for (const { b, payload } of boards) {
@@ -167,7 +169,10 @@ export default async function handler(req, res) {
       items.push({ board: b.board, payload, at: nowMs, prevPayload: prev?.payload, prevAt: prev?.at });
     }
     await commitRecords(collectRecords(items), nowMs);
-    return { boards: items.length };
+    let performance = null;
+    try { performance = await commitPerformance(collectPerformance(items)); }   // a failure here never blocks the Statistics records
+    catch (e) { errors.push({ step: 'performance', error: e.message }); }
+    return { boards: items.length, performance };
   });
 
   // 4. Close out the run
