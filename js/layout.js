@@ -24,6 +24,7 @@ const NAV = [
   ['xp','XP Calculator','xp.html'],
   ['vote','Community Vote','vote.html'],
   ['updates','Updates','updates.html'],
+  ['skin','Skin Lab','skin-lab.html'],
   ['#','Analytics'],
   ['statistics','Statistics','statistics.html'],
   ['activity','Player Activity','player-activity.html'],
