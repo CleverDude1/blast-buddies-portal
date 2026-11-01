@@ -960,7 +960,215 @@ float ocMetal = max(max(max(ocCollar, ocHem), max(ocEdge, ocButton)), ocBuckle);
 totalEmissiveRadiance += trimColor * ocMetal * sheen * ocMask;
 `,
 });
+/* PASTE THIS INTO skin-lab.html
+   Place it right AFTER the SHADERS.officer_coat = generic(...) block and
+   BEFORE the line:  for (const k of Object.keys(SHADERS)) SHADERS[k].vertexPatch = ...
+   Positions are fractions of body height (tuned to the reference picture). */
 
+SHADERS.dress_uniform = generic('dress_uniform', {
+  label: 'Dress uniform (ours: piping, cords, gold sweep)',
+  vertex: 'obj', animated: true,
+  colorKeys: ['woolDark', 'woolLight', 'pipeColor', 'buttonColor', 'goldColor', 'goldHotColor', 'beltColor', 'cordColor'],
+  numKeys: ['woolScale', 'weaveFreq', 'hemY', 'beltY', 'beltWidth', 'collarY', 'shoulderY',
+    'buttonStartY', 'buttonRows', 'buttonSpacing', 'buttonOffset', 'buttonRadius',
+    'pipeX', 'pipeWidth', 'buckleWidth', 'frontSign', 'armInner', 'cuffY',
+    'legStripeX', 'legStripeW', 'capBandY', 'epInner', 'epOuter',
+    'aigX', 'aigY', 'aigR',
+    'sweepSpeed', 'sweepMode', 'coolRate', 'glowIntensity', 'flashIntensity', 'pipeGlow', 'sheen'],
+  ranges: {
+    woolScale: [10, 300, 1], weaveFreq: [0, 800, 1],
+    hemY: [0, 1, 0.005], beltY: [0, 1, 0.005], beltWidth: [0.005, 0.05, 0.001], collarY: [0, 1, 0.005], shoulderY: [0, 1, 0.005],
+    buttonStartY: [0, 1, 0.005], buttonRows: [0, 10, 1], buttonSpacing: [0.01, 0.15, 0.001], buttonOffset: [0, 0.15, 0.001], buttonRadius: [0.002, 0.04, 0.0005],
+    pipeX: [0, 0.2, 0.001], pipeWidth: [0.001, 0.02, 0.0005], buckleWidth: [0, 0.08, 0.001], frontSign: [-1, 1, 2],
+    armInner: [0.05, 0.4, 0.005], cuffY: [0, 1, 0.005], legStripeX: [0, 0.3, 0.001], legStripeW: [0.001, 0.02, 0.0005],
+    capBandY: [0, 1, 0.005], epInner: [0, 0.3, 0.005], epOuter: [0, 0.4, 0.005],
+    aigX: [-0.3, 0.3, 0.005], aigY: [0, 1, 0.005], aigR: [0.01, 0.12, 0.002],
+    sweepSpeed: [0, 1, 0.01], sweepMode: [0, 1, 1], coolRate: [0.5, 40, 0.5],
+    glowIntensity: [0, 6, 0.05], flashIntensity: [0, 8, 0.05], pipeGlow: [0, 1, 0.01], sheen: [0, 1, 0.01],
+  },
+  defaults: {
+    woolDark: '#050506', woolLight: '#16171C', pipeColor: '#E8EAEE', buttonColor: '#C7CBD3',
+    goldColor: '#C9A24A', goldHotColor: '#FFD36B', beltColor: '#0A0A0C', cordColor: '#D9D6CF',
+    woolScale: 110, weaveFreq: 320, hemY: 0.35, beltY: 0.457, beltWidth: 0.021, collarY: 0.775, shoulderY: 0.745,
+    buttonStartY: 0.50, buttonRows: 6, buttonSpacing: 0.042, buttonOffset: 0.036, buttonRadius: 0.012,
+    pipeX: 0.068, pipeWidth: 0.0045, buckleWidth: 0.04, frontSign: 1, armInner: 0.16, cuffY: 0.469,
+    legStripeX: 0.121, legStripeW: 0.004, capBandY: 0.925, epInner: 0.085, epOuter: 0.255,
+    aigX: -0.115, aigY: 0.715, aigR: 0.04,
+    sweepSpeed: 0.18, sweepMode: 1, coolRate: 9, glowIntensity: 1.6, flashIntensity: 2.2, pipeGlow: 0.35, sheen: 0.12,
+  },
+  fragCommon: `
+varying vec3 vObjPos;
+uniform sampler2D maskMap;
+uniform float time;
+uniform float minY;
+uniform float invRangeY;
+uniform vec3 woolDark;
+uniform vec3 woolLight;
+uniform vec3 pipeColor;
+uniform vec3 buttonColor;
+uniform vec3 goldColor;
+uniform vec3 goldHotColor;
+uniform vec3 beltColor;
+uniform vec3 cordColor;
+uniform float woolScale;
+uniform float weaveFreq;
+uniform float hemY;
+uniform float beltY;
+uniform float beltWidth;
+uniform float collarY;
+uniform float shoulderY;
+uniform float buttonStartY;
+uniform float buttonRows;
+uniform float buttonSpacing;
+uniform float buttonOffset;
+uniform float buttonRadius;
+uniform float pipeX;
+uniform float pipeWidth;
+uniform float buckleWidth;
+uniform float frontSign;
+uniform float armInner;
+uniform float cuffY;
+uniform float legStripeX;
+uniform float legStripeW;
+uniform float capBandY;
+uniform float epInner;
+uniform float epOuter;
+uniform float aigX;
+uniform float aigY;
+uniform float aigR;
+uniform float sweepSpeed;
+uniform float sweepMode;
+uniform float coolRate;
+uniform float glowIntensity;
+uniform float flashIntensity;
+uniform float pipeGlow;
+uniform float sheen;
+
+float dcHash(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+float dcNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(mix(dcHash(i), dcHash(i + vec3(1.0, 0.0, 0.0)), f.x),
+            mix(dcHash(i + vec3(0.0, 1.0, 0.0)), dcHash(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+        mix(mix(dcHash(i + vec3(0.0, 0.0, 1.0)), dcHash(i + vec3(1.0, 0.0, 1.0)), f.x),
+            mix(dcHash(i + vec3(0.0, 1.0, 1.0)), dcHash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y),
+        f.z
+    );
+}
+// 1 when v is well inside w, fading to 0 at w
+float dcLE(float v, float w) { return 1.0 - smoothstep(w * 0.6, w, v); }
+float dcLine(float v, float c, float w) { return dcLE(abs(v - c), w); }
+`,
+  fragMap: `
+float dcMask = texture2D(maskMap, vMapUv).r;
+float dcX = vObjPos.x * invRangeY;
+float dcAx = abs(dcX);
+float dcYn = (vObjPos.y - minY) * invRangeY;
+float dcY = clamp(dcYn, 0.0, 1.0);
+float dcZr = vObjPos.z * invRangeY;
+float dcFront = smoothstep(0.0, 0.012, dcZr * frontSign);
+
+// black wool with a fine diagonal twill
+float dcGrain = dcNoise(vec3(dcX, dcYn, dcZr) * woolScale);
+float dcTwill = 0.5 + 0.5 * sin((dcX + dcYn) * weaveFreq);
+vec3 dcCol = mix(woolDark, woolLight, dcGrain * 0.55 + dcTwill * 0.45);
+
+// regions: legs below the hem, jacket body, arms
+float dcUpper = smoothstep(hemY - 0.004, hemY + 0.004, dcY);
+float dcArm = dcUpper * smoothstep(armInner - 0.006, armInner, dcAx);
+float dcBody = dcUpper * (1.0 - dcArm);
+
+// belt (black with a pale strip) and buckle
+float dcBeltD = abs(dcY - beltY);
+float dcBeltBand = dcLE(dcBeltD, beltWidth) * dcBody;
+float dcBeltStrip = dcLE(dcBeltD, beltWidth * 0.68) * dcBody;
+float dcBuckle = dcLE(dcAx, buckleWidth) * dcLE(dcBeltD, beltWidth * 1.3) * dcFront * dcBody;
+float dcBuckleIn = dcLE(dcAx, buckleWidth * 0.6) * dcLE(dcBeltD, beltWidth * 0.8);
+
+// front edge piping, hem line, collar line
+float dcPipeRange = smoothstep(hemY - 0.002, hemY + 0.002, dcY) * (1.0 - smoothstep(collarY - 0.016, collarY - 0.012, dcY));
+float dcPipe = dcLE(abs(dcAx - pipeX), pipeWidth) * dcPipeRange * dcBody * dcFront * (1.0 - dcBeltBand);
+float dcHem = dcLine(dcY, hemY, 0.004) * dcBody;
+float dcCollar = dcLine(dcY, collarY, 0.004);
+
+// double-breasted buttons
+float dcRow = (dcY - buttonStartY) / buttonSpacing;
+float dcRowI = floor(dcRow + 0.5);
+float dcDy = (dcRow - dcRowI) * buttonSpacing;
+float dcDist = length(vec2(abs(dcAx - buttonOffset), dcDy));
+float dcRowOn = step(-0.5, dcRowI) * step(dcRowI, buttonRows - 0.5);
+float dcButton = dcLE(dcDist, buttonRadius) * dcRowOn * dcFront * dcBody;
+float dcDimple = dcLE(dcDist, buttonRadius * 0.5);
+
+// cuffs: two thin lines, a gap, one more line, two gold buttons on the outer side
+float dcCuff = max(max(dcLine(dcY, cuffY, 0.0035), dcLine(dcY, cuffY - 0.013, 0.0035)), dcLine(dcY, cuffY - 0.069, 0.0045)) * dcArm;
+float dcCuffBtn = max(
+    dcLE(length(vec2(dcZr, dcY - (cuffY - 0.024))), 0.009),
+    dcLE(length(vec2(dcZr, dcY - (cuffY - 0.049))), 0.009)) * dcArm;
+
+// trouser side stripes
+float dcLeg = dcLE(abs(dcAx - legStripeX), legStripeW) * (1.0 - dcUpper);
+
+// gold shoulder boards with a fringe pattern
+float dcEp = dcLE(abs(dcY - shoulderY), 0.014)
+    * smoothstep(epInner, epInner + 0.006, dcAx)
+    * (1.0 - smoothstep(epOuter - 0.006, epOuter, dcAx)) * dcUpper;
+
+// gold band around the cap (set capBandY to 0 to turn it off)
+float dcCap = dcLine(dcY, capBandY, 0.008) * step(0.01, capBandY);
+
+// braided shoulder cord: three loops and a tassel
+vec2 dcAp = vec2(dcX - aigX, dcY - aigY);
+vec2 dcQ = vec2(dcAp.x / aigR, dcAp.y / (aigR * 3.5));
+float dcCord = 0.0;
+for (int i = 0; i < 3; i++) {
+    float fi = float(i);
+    float d = abs(length(dcQ) - (1.0 - 0.2 * fi)) * aigR;
+    dcCord = max(dcCord, dcLE(d, 0.0045));
+}
+dcCord *= step(dcAp.y, 0.0);
+float dcCordBottom = aigY - aigR * 3.5;
+float dcTass = dcLE(abs(dcX - aigX), 0.0028) * step(dcCordBottom - 0.075, dcY) * step(dcY, dcCordBottom);
+float dcTassTip = dcTass * step(dcY, dcCordBottom - 0.06);
+dcCord = max(dcCord, dcTass) * dcBody * dcFront;
+dcTassTip *= dcBody * dcFront;
+float dcBraid = 0.7 + 0.3 * sin(dcAp.y * 450.0 + dcAp.x * 260.0);
+
+// compose colors
+dcCol = mix(dcCol, beltColor, dcBeltBand);
+dcCol = mix(dcCol, pipeColor * 0.9, dcBeltStrip);
+float dcTrim = max(max(dcPipe, dcHem), max(max(dcCollar, dcCuff), dcLeg));
+dcCol = mix(dcCol, pipeColor, dcTrim);
+dcCol = mix(dcCol, cordColor * dcBraid, dcCord);
+dcCol = mix(dcCol, mix(buttonColor, buttonColor * 0.55, dcDimple * 0.6), dcButton);
+
+float dcGold = max(max(max(dcBuckle, dcEp), max(dcCuffBtn, dcCap)), dcTassTip);
+vec3 dcGoldCol = goldColor * mix(1.0, 0.75 + 0.25 * sin(dcX * 520.0), dcEp) * (1.0 - 0.3 * dcBuckleIn * dcBuckle);
+dcCol = mix(dcCol, dcGoldCol, dcGold);
+
+diffuseColor.rgb = mix(diffuseColor.rgb, dcCol, dcMask);
+
+// gold sweep: mode 0 climbs and loops (like Warlord), mode 1 goes up then back down
+float dcPhase = fract(time * sweepSpeed);
+float dcPong = step(0.5, sweepMode);
+float dcSweepY = mix(dcPhase, 1.0 - abs(2.0 * dcPhase - 1.0), dcPong);
+float dcAge = mix(fract(dcSweepY - dcY), abs(dcSweepY - dcY), dcPong);
+float dcHeat = exp(-coolRate * dcAge);
+float dcFlash = exp(-30.0 * dcAge);
+vec3 dcGlow = mix(goldColor, goldHotColor, dcHeat);
+
+float dcSilver = max(max(dcTrim, dcButton), dcCord);
+vec3 dcEm = dcGlow * dcGold * (sheen + dcHeat * glowIntensity + dcFlash * flashIntensity);
+dcEm += dcGlow * dcSilver * pipeGlow * (dcHeat * glowIntensity + dcFlash * flashIntensity * 0.6);
+totalEmissiveRadiance += dcEm * dcMask;
+`,
+});
 for (const k of Object.keys(SHADERS)) SHADERS[k].vertexPatch = vertexPatch(SHADERS[k].vertex);
 
 /* ============================================================================
