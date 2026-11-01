@@ -1,0 +1,1632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skin Lab - Blast Buddies Portal</title>
+<!--
+  SKIN LAB
+  Drop this file in the portal's root folder (next to the other pages). It is self-contained:
+  no API route, no Supabase, so it does not use up a Vercel function.
+
+  Optional: put your character export at  models/character.glb  and its mask at
+  models/character-mask.png  and they load automatically. Otherwise use the
+  buttons in the Model box (files stay in your browser).
+
+  Skins you save are kept in this browser (localStorage). Use Export / Copy JSON to move them.
+-->
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<style>
+:root{--bg:#0b0e13;--panel:#131821;--panel2:#1a2130;--line:#252e3d;--text:#e6e9ef;--mut:#8b95a7;--acc:#e8553d;--acc2:#4aa3ff;--ok:#4cc38a}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column}
+a{color:var(--acc2);text-decoration:none}
+.sl-top{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.sl-top h1{font-size:17px;margin:0}
+.sl-top .sub{color:var(--mut);font-size:12px}
+.sl-grid{flex:1;display:grid;grid-template-columns:280px minmax(0,1fr) 350px;min-height:0}
+aside{background:var(--panel);overflow:auto;padding:12px}
+.sl-left{border-right:1px solid var(--line)}
+.sl-right{border-left:1px solid var(--line)}
+h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:16px 0 6px}
+h3 small{text-transform:none;letter-spacing:0;font-weight:400}
+h4{font-size:12px;color:var(--mut);margin:14px 0 4px;text-transform:uppercase;letter-spacing:.05em}
+button,select,input,textarea{font:inherit;color:var(--text)}
+button{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer}
+button:hover{border-color:#3a475c}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button.on{border-color:var(--acc2);color:var(--acc2)}
+select,input[type=text],input[type=number],textarea{background:#0e131b;border:1px solid var(--line);border-radius:6px;padding:5px 8px;width:100%}
+textarea{font:12px/1.35 ui-monospace,Menlo,Consolas,monospace;min-height:190px;resize:vertical}
+.btnrow{display:flex;gap:6px;margin:6px 0;flex-wrap:wrap}
+.btnrow>*{flex:1}
+.lib{display:flex;flex-direction:column;gap:4px}
+.item{display:flex;align-items:center;gap:8px;text-align:left;width:100%;padding:5px 8px}
+.item.on{border-color:var(--acc2);background:#17233a}
+.item .sw{width:38px;height:16px;border-radius:4px;border:1px solid #0006;flex:none}
+.item .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .tag{font-size:10px;color:var(--mut);border:1px solid var(--line);border-radius:10px;padding:0 6px}
+.item.dim{opacity:.55}
+.empty{color:var(--mut);font-size:12px;padding:4px 2px}
+label.file{display:block;background:var(--panel2);border:1px dashed #3a475c;border-radius:6px;padding:8px;margin:6px 0;cursor:pointer;text-align:center}
+label.file input{display:none}
+.status{font-size:12px;color:var(--mut);margin:6px 0;word-break:break-word}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.grid2 label{font-size:12px;color:var(--mut)}
+.mesh{display:flex;gap:6px;align-items:center;font-size:12px;padding:2px 0}
+.mesh input{width:auto}
+.sl-center{position:relative;min-width:0;min-height:0;display:flex}
+#stage{position:relative;flex:1;min-height:0}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;outline:none}
+.tb{position:absolute;left:10px;right:10px;bottom:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:#0b0e13cc;border:1px solid var(--line);border-radius:8px;padding:6px;backdrop-filter:blur(4px)}
+.tb input[type=range]{width:140px}
+.tb .sep{width:1px;height:20px;background:var(--line)}
+.bg{width:20px;height:20px;border-radius:50%;padding:0;border:2px solid #0006}
+.bg.on{border-color:var(--acc2)}
+.cmp{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-around;pointer-events:none;color:var(--mut);font-size:12px}
+.row{display:grid;grid-template-columns:118px 1fr;gap:8px;align-items:center;margin:4px 0}
+.row .lab{font-size:12px;color:var(--mut);overflow:hidden;text-overflow:ellipsis}
+.row .ctl{display:flex;gap:6px;align-items:center}
+.row input[type=color]{width:34px;height:26px;padding:0;border:1px solid var(--line);background:none;border-radius:4px;flex:none}
+.row input[type=range]{flex:1;min-width:0}
+.row input.n{width:70px;flex:none}
+.row input.hex{width:84px;flex:none;font-family:ui-monospace,Menlo,Consolas,monospace}
+.note{font-size:12px;color:var(--mut);background:var(--panel2);border-radius:6px;padding:6px 8px;margin:8px 0}
+.note.warn{color:#ffcf70}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#000d;color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50;max-width:90vw}
+#toast.show{opacity:1}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:10px;width:min(640px,92vw)}
+dialog::backdrop{background:#000a}
+dialog textarea{min-height:240px}
+@media (max-width:1000px){
+  body{height:auto}
+  .sl-grid{grid-template-columns:1fr}
+  .sl-center{height:60vh;order:-1}
+  .sl-left{border-right:0}
+  .sl-right{border-left:0}
+}
+</style>
+</head>
+<body>
+<header class="sl-top">
+  <a href="index.html">&larr; Portal</a>
+  <h1>Skin Lab</h1>
+  <span class="sub">Skins are drawn with the game's own shader code, so what you see here is what the game draws.</span>
+</header>
+
+<main class="sl-grid">
+  <aside class="sl-left">
+    <div class="btnrow">
+      <select id="newType"></select>
+      <button id="btnNew">New skin</button>
+    </div>
+    <div class="btnrow">
+      <button id="btnImport">Import&hellip;</button>
+      <button id="btnExportAll">Export mine</button>
+    </div>
+
+    <h3>Game skins <small>(real shaders)</small></h3>
+    <div id="libGame" class="lib"></div>
+    <h3>Our designs</h3>
+    <div id="libOurs" class="lib"></div>
+    <h3>My skins</h3>
+    <div id="libMine" class="lib"></div>
+
+    <h3>Model</h3>
+    <label class="file">Load character (.glb)<input type="file" id="fileModel" accept=".glb,model/gltf-binary"></label>
+    <label class="file">Load mask image (optional)<input type="file" id="fileMask" accept="image/*"></label>
+    <button id="btnClearMask" style="width:100%">Clear mask</button>
+    <div class="status" id="modelStatus"></div>
+    <div class="grid2">
+      <label>Gradient min Y<input type="number" id="minY" step="0.01"></label>
+      <label>Gradient height<input type="number" id="rangeY" step="0.01"></label>
+    </div>
+    <div class="btnrow"><button id="btnAutoRange">Auto-measure from model</button></div>
+    <div class="status">If you find the game's <code>invRangeY</code>, type height = 1 / invRangeY and min Y = 0.</div>
+    <h3>Skin on these parts</h3>
+    <div id="meshList"></div>
+  </aside>
+
+  <section class="sl-center">
+    <div id="stage">
+      <canvas id="cv"></canvas>
+      <div class="cmp" id="cmpLabels"></div>
+      <div class="tb">
+        <button id="btnTurn" class="on">Turntable</button>
+        <button id="btnPlay">&#9654; Time</button>
+        <input type="range" id="timeSlider" min="0" max="60" step="0.01" value="0" title="Shader time in seconds">
+        <span class="sep"></span>
+        <span id="bgs" style="display:flex;gap:5px"></span>
+        <span class="sep"></span>
+        <button id="btnReset">Reset view</button>
+        <button id="btnShot">Screenshot</button>
+        <span class="sep"></span>
+        <button id="btnPin" title="Keep the current look on the left and keep editing on the right">Pin to compare</button>
+        <button id="btnUnpin">Clear compare</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="sl-right">
+    <div class="row"><span class="lab">Name</span><input type="text" id="skName"></div>
+    <div class="row"><span class="lab">Shader type</span><select id="skType"></select></div>
+    <div id="note" class="note"></div>
+    <div id="controls"></div>
+
+    <h3>JSON <small>(same format as the game's skin list)</small></h3>
+    <textarea id="skJson" spellcheck="false"></textarea>
+    <div class="btnrow">
+      <button id="btnApplyJson">Apply JSON</button>
+      <button id="btnCopy">Copy</button>
+      <button id="btnDownload">Download</button>
+    </div>
+    <div class="btnrow">
+      <button id="btnSave" class="primary">Save to My skins</button>
+      <button id="btnDup">Duplicate</button>
+      <button id="btnDel">Delete</button>
+    </div>
+  </aside>
+</main>
+
+<dialog id="dlgImport">
+  <h3 style="margin-top:0">Import skins</h3>
+  <p class="status">Paste a single skin entry, a list of skins, or the game's whole skin list (JSON). Or choose a .json file.</p>
+  <textarea id="impText" spellcheck="false" placeholder='{"id":56,"name":"MY SKIN","shader":{"type":"gradient_y","colors":["#112233","#8899aa"]}}'></textarea>
+  <div class="btnrow">
+    <input type="file" id="impFile" accept=".json,application/json">
+    <button id="impGo" class="primary">Import</button>
+    <button id="impClose">Close</button>
+  </div>
+</dialog>
+
+<div id="toast"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
+
+/* ============================================================================
+   helpers
+   ========================================================================== */
+const $ = (id) => document.getElementById(id);
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const DEFAULT_MODEL = 'models/character.glb';
+const DEFAULT_MASK = 'models/character-mask.png';
+const STORE_KEY = 'bbSkinLab.v1';
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+let toastTimer = 0;
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
+function toHex(v) {
+  if (typeof v !== 'string') return '#000000';
+  let s = v.trim();
+  if (/^#[0-9a-f]{3}$/i.test(s)) s = '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+  return /^#[0-9a-f]{6}$/i.test(s) ? s.toLowerCase() : '#000000';
+}
+function normHex(v) {
+  let s = String(v).trim();
+  if (s[0] !== '#') s = '#' + s;
+  if (/^#[0-9a-f]{3}$/i.test(s)) s = '#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+  return /^#[0-9a-f]{6}$/i.test(s) ? s.toUpperCase() : null;
+}
+const setC = (u, k, hex) => { if (!u[k]) u[k] = { value: new THREE.Color() }; u[k].value.set(hex); };
+const setN = (u, k, n) => { if (!u[k]) u[k] = { value: 0 }; u[k].value = n; };
+const fixList = (a, d) => d.map((x, i) => (Array.isArray(a) && typeof a[i] === 'string' ? a[i] : x));
+const fixNums = (a, d) => d.map((x, i) => (Array.isArray(a) && typeof a[i] === 'number' ? a[i] : x));
+function clean(skin) {
+  const o = {};
+  for (const k of Object.keys(skin)) if (!k.startsWith('__')) o[k] = skin[k];
+  return clone(o);
+}
+const slug = (s) => String(s || 'skin').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'skin';
+function download(name, text, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: type || 'application/json' }));
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+/* ============================================================================
+   shader registry
+   The GLSL for gradient_y, gradient_y_3stop, arctic_wolf, crimson_apex,
+   void_reaver and warlord is the game's own code. officer_coat is our proposal.
+   ========================================================================== */
+function vertexPatch(kind) {
+  return (src) => {
+    if (kind === 'obj') {
+      return src
+        .replace('#include <common>', '#include <common>\nvarying vec3 vObjPos;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvObjPos = transformed;');
+    }
+    return src
+      .replace('#include <common>', '#include <common>\nvarying vec3 vObjPos;\nvarying vec3 vWorldPos;\nvarying vec3 vWorldNormal;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvObjPos = transformed;\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;')
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvWorldNormal = normalize((modelMatrix * vec4(objectNormal, 0.0)).xyz);');
+  };
+}
+
+function generic(key, cfg) {
+  return Object.assign({ key, vertex: 'world', animated: true, editor: 'generic' }, cfg, {
+    fill(u, sh) {
+      for (const k of cfg.colorKeys) setC(u, k, sh[k] !== undefined ? sh[k] : cfg.defaults[k]);
+      for (const k of cfg.numKeys) setN(u, k, sh[k] !== undefined ? sh[k] : cfg.defaults[k]);
+    },
+  });
+}
+
+const SHADERS = {};
+
+SHADERS.gradient_y = {
+  key: 'gradient_y', label: 'Gradient, 2 colors', vertex: 'obj', animated: false, editor: 'grad2',
+  defaults: { colors: ['#C9B07A', '#6F5A33'] },
+  fill(u, sh) { setC(u, 'colorA', sh.colors[0]); setC(u, 'colorB', sh.colors[1]); },
+  fragCommon: `
+varying vec3 vObjPos;
+uniform sampler2D maskMap;
+uniform float minY;
+uniform float invRangeY;
+uniform vec3 colorA;
+uniform vec3 colorB;
+`,
+  fragMap: `
+float maskValue = texture2D(maskMap, vMapUv).r;
+float g = clamp((vObjPos.y - minY) * invRangeY, 0.0, 1.0);
+vec3 grad = mix(colorA, colorB, g);
+diffuseColor.rgb *= mix(vec3(1.0), grad, maskValue);
+`,
+};
+
+SHADERS.gradient_y_3stop = {
+  key: 'gradient_y_3stop', label: 'Gradient, 3 colors + noise', vertex: 'obj', animated: false, editor: 'grad3',
+  defaults: { colors: ['#1a0f5e', '#7b3ff5', '#33ccff'], stops: [0, 0.525, 0.775], contrast: 1, noise: { amount: 0.12, scale: 25 } },
+  fill(u, sh) {
+    const st = sh.stops || [0, 0.5, 1];
+    setC(u, 'colorA', sh.colors[0]); setC(u, 'colorB', sh.colors[1]); setC(u, 'colorC', sh.colors[2]);
+    setN(u, 'stopA', st[0]); setN(u, 'stopB', st[1]); setN(u, 'stopC', st[2]);
+    setN(u, 'contrast', sh.contrast || 1);
+    setN(u, 'noiseAmount', (sh.noise && sh.noise.amount) || 0);
+    setN(u, 'noiseScale', (sh.noise && sh.noise.scale) || 10);
+  },
+  fragCommon: `
+varying vec3 vObjPos;
+uniform sampler2D maskMap;
+uniform float minY;
+uniform float invRangeY;
+uniform vec3 colorA;
+uniform vec3 colorB;
+uniform vec3 colorC;
+uniform float stopA;
+uniform float stopB;
+uniform float stopC;
+uniform float contrast;
+uniform float noiseAmount;
+uniform float noiseScale;
+
+float hash(vec3 p) {
+    p = fract(p * 0.3183099 + 0.1);
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+`,
+  fragMap: `
+float maskValue = texture2D(maskMap, vMapUv).r;
+float g = clamp((vObjPos.y - minY) * invRangeY, 0.0, 1.0);
+
+// Add noise
+float noise = hash(vObjPos * noiseScale);
+g += (noise - 0.5) * noiseAmount;
+g = clamp(g, 0.0, 1.0);
+
+// Apply contrast
+g = pow(g, contrast);
+
+// 3-stop gradient
+vec3 grad;
+if (g < stopB) {
+    float t = (g - stopA) / (stopB - stopA);
+    grad = mix(colorA, colorB, clamp(t, 0.0, 1.0));
+} else {
+    float t = (g - stopB) / (stopC - stopB);
+    grad = mix(colorB, colorC, clamp(t, 0.0, 1.0));
+}
+
+diffuseColor.rgb *= mix(vec3(1.0), grad, maskValue);
+`,
+};
+
+SHADERS.arctic_wolf = generic('arctic_wolf', {
+  label: 'Arctic Wolf (ice cracks + snow)',
+  colorKeys: ['baseColor', 'shadowColor', 'glowColor', 'fresnelColor'],
+  numKeys: ['scale', 'veinSharpness', 'glowIntensity', 'shimmerSpeed', 'crackDrift', 'specularSharpness', 'specularIntensity', 'fresnelPower', 'fresnelIntensity', 'snowScale', 'snowSpeed', 'snowIntensity'],
+  defaults: { baseColor: '#D8E8F0', shadowColor: '#A0BCD0', glowColor: '#40D0FF', fresnelColor: '#40D0FF', scale: 22, veinSharpness: 0.8, glowIntensity: 3.5, shimmerSpeed: 1.2, crackDrift: 0.08, specularSharpness: 40, specularIntensity: 2.5, fresnelPower: 3, fresnelIntensity: 0.8, snowScale: 35, snowSpeed: 0.8, snowIntensity: 1.5 },
+  fragCommon: `
+varying vec3 vObjPos;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+
+uniform sampler2D maskMap;
+uniform float time;
+
+uniform vec3 baseColor;
+uniform vec3 shadowColor;
+uniform vec3 glowColor;
+
+uniform float scale;
+uniform float veinSharpness;
+uniform float glowIntensity;
+uniform float shimmerSpeed;
+uniform float crackDrift;
+uniform float specularSharpness;
+uniform float specularIntensity;
+uniform float fresnelPower;
+uniform float fresnelIntensity;
+uniform vec3 fresnelColor;
+uniform float snowScale;
+uniform float snowSpeed;
+uniform float snowIntensity;
+
+float awHash(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+float awNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float n000 = awHash(i);
+    float n100 = awHash(i + vec3(1.0, 0.0, 0.0));
+    float n010 = awHash(i + vec3(0.0, 1.0, 0.0));
+    float n110 = awHash(i + vec3(1.0, 1.0, 0.0));
+    float n001 = awHash(i + vec3(0.0, 0.0, 1.0));
+    float n101 = awHash(i + vec3(1.0, 0.0, 1.0));
+    float n011 = awHash(i + vec3(0.0, 1.0, 1.0));
+    float n111 = awHash(i + vec3(1.0, 1.0, 1.0));
+
+    return mix(
+        mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
+        mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y),
+        f.z
+    );
+}
+`,
+  fragMap: `
+float awMask = texture2D(maskMap, vMapUv).r;
+
+//
+// ICE CRACKS
+vec3 awP = vObjPos * scale + vec3(0.0, time * crackDrift, 0.0);
+float awN = awNoise(awP);
+float awRidged = 1.0 - abs(awN * 2.0 - 1.0);
+float awVeins = smoothstep(veinSharpness, 1.0, awRidged);
+
+float awSh = 0.75 + 0.25 * sin(time * shimmerSpeed + (awP.x + awP.y + awP.z) * 0.6);
+
+//
+// BASE COLOR
+vec3 awFrost = mix(mix(shadowColor, baseColor, 0.5), mix(baseColor, glowColor, 0.15), awVeins);
+diffuseColor.rgb = mix(diffuseColor.rgb, awFrost, awMask);
+
+//
+// SNOWFALL PARTICLES
+vec3 awSnowCell = floor(vObjPos * snowScale + vec3(0.0, -time * snowSpeed, 0.0));
+float awSnowH = awHash(awSnowCell);
+float awSnow = smoothstep(0.92, 1.0, awSnowH) * max(0.0, sin(awSnowH * 6.283 + time * (1.0 + awSnowH * 2.0)));
+
+//
+// SPECULAR + FRESNEL
+vec3 awViewDir = normalize(cameraPosition - vWorldPos);
+vec3 awHalfDir = normalize(awViewDir + vec3(0.4243, 0.8486, 0.2546));
+float awSpec = pow(max(0.0, dot(vWorldNormal, awHalfDir)), specularSharpness);
+float awFresnel = pow(1.0 - max(0.0, dot(awViewDir, vWorldNormal)), fresnelPower);
+
+//
+// COMPOSE EMISSIVE
+totalEmissiveRadiance += (
+    glowColor * awVeins * glowIntensity * awSh
+    + mix(baseColor, glowColor, 0.3) * awSpec * awVeins * specularIntensity
+    + vec3(0.9, 0.95, 1.0) * awSnow * snowIntensity
+    + fresnelColor * awFresnel * fresnelIntensity
+) * awMask;
+`,
+});
+
+SHADERS.crimson_apex = generic('crimson_apex', {
+  label: 'Crimson Apex (stripes + pulse)',
+  colorKeys: ['baseColor', 'accentColor', 'glowColor'],
+  numKeys: ['stripeSpeed', 'stripeScale', 'stripeWidth', 'pulseSpeed', 'pulseIntensity', 'scanlineSpeed', 'scanlineIntensity', 'fresnelPower', 'fresnelIntensity'],
+  defaults: { baseColor: '#050505', accentColor: '#CC0000', glowColor: '#FF3030', stripeSpeed: 1.5, stripeScale: 4, stripeWidth: 0.15, pulseSpeed: 0.6, pulseIntensity: 0.6, scanlineSpeed: 0.25, scanlineIntensity: 0.1, fresnelPower: 5, fresnelIntensity: 0.4 },
+  fragCommon: `
+varying vec3 vObjPos;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+uniform sampler2D maskMap;
+uniform float time;
+uniform vec3 baseColor;
+uniform vec3 accentColor;
+uniform vec3 glowColor;
+uniform float stripeSpeed;
+uniform float stripeScale;
+uniform float stripeWidth;
+uniform float pulseSpeed;
+uniform float pulseIntensity;
+uniform float scanlineSpeed;
+uniform float scanlineIntensity;
+uniform float fresnelPower;
+uniform float fresnelIntensity;
+
+float hash(float n) {
+    return fract(sin(n) * 43758.5453123);
+}
+`,
+  fragMap: `
+float maskValue = texture2D(maskMap, vMapUv).r;
+
+// Animated diagonal stripes using object position
+float diagonalPattern = vObjPos.x + vObjPos.y * 0.5 + vObjPos.z * 0.3;
+diagonalPattern *= stripeScale;
+diagonalPattern += time * stripeSpeed;
+
+// Create sharp stripes
+float stripe = fract(diagonalPattern);
+float stripePattern = smoothstep(stripeWidth - 0.05, stripeWidth, stripe) *
+                      smoothstep(stripeWidth + 0.05, stripeWidth, stripe);
+
+// Pulsing glow effect
+float pulse = sin(time * pulseSpeed) * 0.5 + 0.5;
+pulse = pow(pulse, 2.0);
+
+// Vertical scanlines that move
+float scanline = vObjPos.y * 15.0 - time * scanlineSpeed;
+float scanPattern = smoothstep(0.3, 0.7, fract(scanline)) * scanlineIntensity;
+
+// Combine stripe with pulse
+vec3 stripeColor = mix(baseColor, accentColor, stripePattern);
+stripeColor += glowColor * stripePattern * pulse * pulseIntensity;
+
+// Add scanline glow
+stripeColor += glowColor * scanPattern;
+
+// Fresnel rim lighting
+vec3 viewDir = normalize(cameraPosition - vWorldPos);
+float fresnel = pow(1.0 - max(0.0, dot(viewDir, vWorldNormal)), fresnelPower);
+vec3 fresnelGlow = glowColor * fresnel * fresnelIntensity;
+
+// Add subtle digital noise
+float noise = hash(vObjPos.x + vObjPos.y + time * 0.1);
+stripeColor += (noise - 0.5) * 0.02;
+
+vec3 finalColor = stripeColor + fresnelGlow;
+
+diffuseColor.rgb *= mix(vec3(1.0), finalColor, maskValue);
+`,
+});
+
+SHADERS.void_reaver = generic('void_reaver', {
+  label: 'Void Reaver (flowing veins + sparkle)',
+  colorKeys: ['baseColor', 'veinColorA', 'veinColorB', 'glowColor'],
+  numKeys: ['veinScale', 'veinSpeed', 'veinSharpness', 'veinIntensity', 'colorShiftSpeed', 'sparkleScale', 'sparkleSpeed', 'sparkleIntensity', 'fresnelPower', 'fresnelIntensity'],
+  defaults: { baseColor: '#020308', veinColorA: '#1E90FF', veinColorB: '#88CCFF', glowColor: '#E0F0FF', veinScale: 8, veinSpeed: 0.6, veinSharpness: 0.55, veinIntensity: 2.5, colorShiftSpeed: 0.8, sparkleScale: 35, sparkleSpeed: 1.5, sparkleIntensity: 3, fresnelPower: 3.5, fresnelIntensity: 0.8 },
+  fragCommon: `
+varying vec3 vObjPos;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+uniform sampler2D maskMap;
+uniform float time;
+uniform vec3 baseColor;
+uniform vec3 veinColorA;
+uniform vec3 veinColorB;
+uniform vec3 glowColor;
+uniform float veinScale;
+uniform float veinSpeed;
+uniform float veinSharpness;
+uniform float veinIntensity;
+uniform float colorShiftSpeed;
+uniform float sparkleScale;
+uniform float sparkleSpeed;
+uniform float sparkleIntensity;
+uniform float fresnelPower;
+uniform float fresnelIntensity;
+
+// Hash and noise utilities
+float pvHash(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.yzx + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+float pvNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float n000 = pvHash(i);
+    float n100 = pvHash(i + vec3(1, 0, 0));
+    float n010 = pvHash(i + vec3(0, 1, 0));
+    float n110 = pvHash(i + vec3(1, 1, 0));
+    float n001 = pvHash(i + vec3(0, 0, 1));
+    float n101 = pvHash(i + vec3(1, 0, 1));
+    float n011 = pvHash(i + vec3(0, 1, 1));
+    float n111 = pvHash(i + vec3(1, 1, 1));
+
+    float nx00 = mix(n000, n100, f.x);
+    float nx10 = mix(n010, n110, f.x);
+    float nx01 = mix(n001, n101, f.x);
+    float nx11 = mix(n011, n111, f.x);
+
+    float nxy0 = mix(nx00, nx10, f.y);
+    float nxy1 = mix(nx01, nx11, f.y);
+
+    return mix(nxy0, nxy1, f.z);
+}
+
+// Ridged fractal noise for vein-like patterns
+float pvRidgedFBM(vec3 p) {
+    float v = 0.0;
+    float amp = 0.5;
+    float freq = 1.0;
+    for (int i = 0; i < 3; i++) {
+        float n = pvNoise(p * freq);
+        n = 1.0 - abs(n * 2.0 - 1.0);
+        n = n * n;
+        v += n * amp;
+        amp *= 0.5;
+        freq *= 2.1;
+    }
+    return v;
+}
+`,
+  fragMap: `
+float maskValue = texture2D(maskMap, vMapUv).r;
+
+vec3 p = vObjPos * veinScale;
+
+// Flowing vein pattern - two overlapping ridged noise fields
+// moving in different directions for organic look
+float veins1 = pvRidgedFBM(
+    p + vec3(time * veinSpeed * 0.3, -time * veinSpeed * 0.2, 0.0)
+);
+float veins2 = pvRidgedFBM(
+    p * 1.3 + vec3(0.0, time * veinSpeed * 0.15, -time * veinSpeed * 0.25) + 5.0
+);
+
+float veins = max(veins1, veins2);
+veins = smoothstep(veinSharpness, 1.0, veins);
+
+float shift = sin(time * colorShiftSpeed) * 0.5 + 0.5;
+
+// Also vary per-position so veins are multi-colored
+float posShift = sin(
+    (vObjPos.x + vObjPos.y + vObjPos.z) * 3.0 +
+    time * colorShiftSpeed * 0.5
+) * 0.5 + 0.5;
+
+float mixFactor = mix(shift, posShift, 0.5);
+vec3 veinColor = mix(veinColorA, veinColorB, mixFactor);
+
+// Sparkle effect - flickering bright points
+float sparkleNoise = pvNoise(
+    vObjPos * sparkleScale + time * sparkleSpeed
+);
+float sparkle = smoothstep(0.92, 0.98, sparkleNoise);
+sparkle *= (0.5 + 0.5 * sin(time * 12.0 + sparkleNoise * 40.0));
+
+float pulse = 0.8 + 0.2 * sin(time * 1.5 + veins1 * 6.0);
+
+// Fresnel rim glow
+vec3 viewDir = normalize(cameraPosition - vWorldPos);
+float fresnel = pow(
+    1.0 - max(0.0, dot(viewDir, vWorldNormal)),
+    fresnelPower
+);
+
+vec3 base = baseColor;
+vec3 veinGlow = veinColor * veins * veinIntensity * pulse;
+vec3 sparkleGlow = glowColor * sparkle * sparkleIntensity;
+vec3 fresnelGlow = glowColor * fresnel * fresnelIntensity;
+
+diffuseColor.rgb = mix(
+    diffuseColor.rgb,
+    base,
+    maskValue
+);
+
+totalEmissiveRadiance += (veinGlow + sparkleGlow + fresnelGlow) * maskValue;
+`,
+});
+
+SHADERS.warlord = generic('warlord', {
+  label: 'Warlord (iron, tallies, war paint)',
+  colorKeys: ['ironDark', 'ironLight', 'paintColor', 'tallyHotColor', 'tallyCoolColor', 'emberColor', 'fresnelColor'],
+  numKeys: ['ironScale', 'tallyScale', 'tallyDepth', 'sweepSpeed', 'coolRate', 'heatIntensity', 'flashIntensity', 'paintFreq', 'paintAngle', 'paintWidth', 'paintRoughness', 'emberScale', 'emberDrift', 'emberIntensity', 'fresnelPower', 'fresnelIntensity'],
+  ranges: { paintAngle: [0, 3.15, 0.01], paintWidth: [0, 0.4, 0.005], paintRoughness: [0, 0.5, 0.005], tallyDepth: [0, 1, 0.01] },
+  defaults: { ironDark: '#14100E', ironLight: '#4A423C', paintColor: '#8E1018', tallyHotColor: '#FFAA33', tallyCoolColor: '#661010', emberColor: '#FF5522', fresnelColor: '#B01822', ironScale: 14, tallyScale: 4.5, tallyDepth: 0.75, sweepSpeed: 0.18, coolRate: 5, heatIntensity: 2.4, flashIntensity: 3.5, paintFreq: 1.4, paintAngle: 0.6, paintWidth: 0.09, paintRoughness: 0.12, emberScale: 11, emberDrift: 0.15, emberIntensity: 0.9, fresnelPower: 3, fresnelIntensity: 0.55 },
+  fragCommon: `
+varying vec3 vObjPos;
+varying vec3 vWorldPos;
+varying vec3 vWorldNormal;
+uniform sampler2D maskMap;
+uniform float time;
+uniform vec3 ironDark;
+uniform vec3 ironLight;
+uniform vec3 paintColor;
+uniform vec3 tallyHotColor;
+uniform vec3 tallyCoolColor;
+uniform vec3 emberColor;
+uniform vec3 fresnelColor;
+uniform float ironScale;
+uniform float tallyScale;
+uniform float tallyDepth;
+uniform float sweepSpeed;
+uniform float coolRate;
+uniform float heatIntensity;
+uniform float flashIntensity;
+uniform float paintFreq;
+uniform float paintAngle;
+uniform float paintWidth;
+uniform float paintRoughness;
+uniform float emberScale;
+uniform float emberDrift;
+uniform float emberIntensity;
+uniform float fresnelPower;
+uniform float fresnelIntensity;
+uniform float minY;
+uniform float invRangeY;
+
+float wlHash(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+float wlHash2(vec2 p) {
+    return wlHash(vec3(p, 17.17));
+}
+
+float wlNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+
+    float a = wlHash(i);
+    float b = wlHash(i + vec3(1.0, 0.0, 0.0));
+    float c = wlHash(i + vec3(0.0, 1.0, 0.0));
+    float d = wlHash(i + vec3(1.0, 1.0, 0.0));
+    float e = wlHash(i + vec3(0.0, 0.0, 1.0));
+    float g = wlHash(i + vec3(1.0, 0.0, 1.0));
+    float h = wlHash(i + vec3(0.0, 1.0, 1.0));
+    float k = wlHash(i + vec3(1.0, 1.0, 1.0));
+
+    return mix(
+        mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
+        mix(mix(e, g, f.x), mix(h, k, f.x), f.y),
+        f.z
+    );
+}
+
+float wlFBM(vec3 p) {
+    float v = 0.0;
+    float amp = 0.5;
+    float freq = 1.0;
+    for (int i = 0; i < 3; i++) {
+        v += wlNoise(p * freq) * amp;
+        amp *= 0.5;
+        freq *= 2.15;
+    }
+    return v;
+}
+
+float wlStroke(float x, float center, float halfWidth) {
+    return smoothstep(halfWidth, halfWidth * 0.45, abs(x - center));
+}
+
+// Kill-tally group per cell: up to four vertical scratches plus the diagonal fifth,
+// count and tilt randomized per cell so the armor reads as a hand-carved war record.
+float wlTally(vec2 uv) {
+    vec2 cell = floor(uv * tallyScale);
+    vec2 f = fract(uv * tallyScale);
+    float h = wlHash2(cell);
+
+    float tilt = (h - 0.5) * 0.35;
+    vec2 c = f - 0.5;
+    f = vec2(c.x - c.y * tilt, c.y + c.x * tilt * 0.4) + 0.5;
+
+    float inCell = smoothstep(0.04, 0.1, f.x) * smoothstep(0.96, 0.9, f.x) *
+        smoothstep(0.14, 0.24, f.y) * smoothstep(0.9, 0.8, f.y);
+
+    float count = floor(h * 5.0) + 1.0;
+    float strokes = 0.0;
+    for (int i = 0; i < 4; i++) {
+        float fi = float(i);
+        float jitter = (wlHash2(cell + fi + 3.0) - 0.5) * 0.05;
+        strokes += wlStroke(f.x, 0.2 + fi * 0.17 + jitter, 0.035) * step(fi + 0.5, count);
+    }
+
+    vec2 dir = normalize(vec2(0.62, -0.52));
+    vec2 rel = f - vec2(0.14, 0.78);
+    float along = clamp(dot(rel, dir), 0.0, 0.82);
+    float slashDist = length(rel - dir * along);
+    strokes += smoothstep(0.04, 0.018, slashDist) * step(4.5, count);
+
+    return clamp(strokes, 0.0, 1.0) * inCell;
+}
+`,
+  fragMap: `
+float wlMask = texture2D(maskMap, vMapUv).r;
+
+float wlNormY = clamp((vObjPos.y - minY) * invRangeY, 0.0, 1.0);
+vec3 wlNormal = normalize(vWorldNormal);
+vec3 wlViewDir = normalize(cameraPosition - vWorldPos);
+float wlNdotV = max(0.0, dot(wlViewDir, wlNormal));
+
+//
+// Battle-forged iron: hammered dents plus a faint horizontal brush grain
+float wlDents = wlFBM(vObjPos * ironScale);
+float wlGrain = wlNoise(vObjPos * vec3(4.0, 60.0, 4.0)) * 0.12;
+vec3 wlIron = mix(ironDark, ironLight, wlDents * 0.85 + wlGrain);
+
+//
+// Kill tallies carved on two planar projections, blended by facing
+vec2 wlUvFront = vObjPos.xy;
+vec2 wlUvSide = vObjPos.zy;
+float wlSideW = smoothstep(0.35, 0.75, abs(wlNormal.x));
+float wlTallyMask = mix(wlTally(wlUvFront), wlTally(wlUvSide), wlSideW);
+
+//
+// Victory sweep: an ignition front climbs the body, tallies flash molten then cool
+float wlPhase = fract(time * sweepSpeed);
+float wlAge = fract(wlPhase - wlNormY);
+float wlHeat = exp(-coolRate * wlAge);
+float wlFlash = exp(-30.0 * wlAge);
+vec3 wlTallyGlow = mix(tallyCoolColor, tallyHotColor, wlHeat);
+
+//
+// War-paint slashes: matte blood-red claw stripes with ragged edges across the torso
+float wlAngC = cos(paintAngle);
+float wlAngS = sin(paintAngle);
+float wlPaintCoord = vObjPos.x * wlAngC + vObjPos.y * wlAngS;
+float wlEdgeNoise = (wlFBM(vObjPos * 9.0) - 0.5) * paintRoughness;
+float wlStripeDist = abs(fract(wlPaintCoord * paintFreq + 0.5) - 0.5) / paintFreq;
+float wlPaint = smoothstep(paintWidth, paintWidth * 0.45, wlStripeDist + wlEdgeNoise);
+wlPaint *= smoothstep(0.3, 0.45, wlNormY) * smoothstep(1.0, 0.85, wlNormY);
+
+//
+// Smoldering scars: thin ridged cracks that breathe with heat
+float wlScarN = wlNoise(vObjPos * emberScale + vec3(0.0, time * emberDrift, 0.0));
+float wlScar = 1.0 - abs(wlScarN * 2.0 - 1.0);
+wlScar = smoothstep(0.93, 1.0, wlScar);
+float wlScarPulse = 0.6 + 0.4 * sin(time * 1.7 + vObjPos.y * 4.0);
+
+//
+// Fresnel rim: smoky blood-red edge light
+float wlFresnel = pow(1.0 - wlNdotV, fresnelPower);
+
+//
+// Compose
+vec3 wlSurface = wlIron;
+wlSurface = mix(wlSurface, paintColor, wlPaint * 0.9);
+wlSurface *= 1.0 - wlTallyMask * tallyDepth;
+
+diffuseColor.rgb = mix(diffuseColor.rgb, wlSurface, wlMask);
+
+vec3 wlEmissive = vec3(0.0);
+wlEmissive += wlTallyGlow * wlTallyMask * (0.25 + wlHeat * heatIntensity + wlFlash * flashIntensity);
+wlEmissive += emberColor * wlScar * wlScarPulse * emberIntensity * (1.0 - wlPaint);
+wlEmissive += fresnelColor * wlFresnel * fresnelIntensity;
+
+totalEmissiveRadiance += wlEmissive * wlMask;
+`,
+});
+
+/* officer_coat: OUR proposal, not a game shader. Positions are fractions of body height. */
+SHADERS.officer_coat = generic('officer_coat', {
+  label: 'Officer coat (ours: buttons, piping, belt)',
+  vertex: 'obj', animated: false,
+  colorKeys: ['woolDark', 'woolLight', 'trimColor', 'trimShade', 'bootColor', 'beltColor'],
+  numKeys: ['woolScale', 'weaveFreq', 'bootTop', 'hemY', 'beltY', 'beltWidth', 'collarY', 'buttonStartY', 'buttonEndY', 'buttonSpacing', 'buttonOffset', 'buttonRadius', 'pipeX', 'pipeWidth', 'buckleWidth', 'frontSign', 'frontFade', 'sheen'],
+  ranges: {
+    woolScale: [10, 300, 1], weaveFreq: [0, 800, 1],
+    bootTop: [0, 1, 0.005], hemY: [0, 1, 0.005], beltY: [0, 1, 0.005], collarY: [0, 1, 0.005],
+    buttonStartY: [0, 1, 0.005], buttonEndY: [0, 1, 0.005],
+    beltWidth: [0, 0.05, 0.001], buttonSpacing: [0.01, 0.15, 0.001], buttonOffset: [0, 0.15, 0.001],
+    buttonRadius: [0.002, 0.04, 0.0005], pipeX: [0, 0.2, 0.001], pipeWidth: [0.001, 0.02, 0.0005],
+    buckleWidth: [0, 0.08, 0.001], frontSign: [-1, 1, 2], frontFade: [0.001, 0.05, 0.001], sheen: [0, 1, 0.01],
+  },
+  defaults: { woolDark: '#08090B', woolLight: '#1B1D23', trimColor: '#C9CDD4', trimShade: '#6F747E', bootColor: '#040405', beltColor: '#0F0F11', woolScale: 90, weaveFreq: 260, bootTop: 0.22, hemY: 0.40, beltY: 0.50, beltWidth: 0.016, collarY: 0.84, buttonStartY: 0.54, buttonEndY: 0.78, buttonSpacing: 0.048, buttonOffset: 0.030, buttonRadius: 0.011, pipeX: 0.070, pipeWidth: 0.004, buckleWidth: 0.022, frontSign: 1, frontFade: 0.012, sheen: 0.12 },
+  fragCommon: `
+varying vec3 vObjPos;
+uniform sampler2D maskMap;
+uniform float minY;
+uniform float invRangeY;
+uniform vec3 woolDark;
+uniform vec3 woolLight;
+uniform vec3 trimColor;
+uniform vec3 trimShade;
+uniform vec3 bootColor;
+uniform vec3 beltColor;
+uniform float woolScale;
+uniform float weaveFreq;
+uniform float bootTop;
+uniform float hemY;
+uniform float beltY;
+uniform float beltWidth;
+uniform float collarY;
+uniform float buttonStartY;
+uniform float buttonEndY;
+uniform float buttonSpacing;
+uniform float buttonOffset;
+uniform float buttonRadius;
+uniform float pipeX;
+uniform float pipeWidth;
+uniform float buckleWidth;
+uniform float frontSign;
+uniform float frontFade;
+uniform float sheen;
+
+float ocHash(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.x + p.y) * p.z);
+}
+
+float ocNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(mix(ocHash(i), ocHash(i + vec3(1.0, 0.0, 0.0)), f.x),
+            mix(ocHash(i + vec3(0.0, 1.0, 0.0)), ocHash(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+        mix(mix(ocHash(i + vec3(0.0, 0.0, 1.0)), ocHash(i + vec3(1.0, 0.0, 1.0)), f.x),
+            mix(ocHash(i + vec3(0.0, 1.0, 1.0)), ocHash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y),
+        f.z
+    );
+}
+
+float ocLine(float v, float c, float w) {
+    return smoothstep(w, w * 0.5, abs(v - c));
+}
+`,
+  fragMap: `
+float ocMask = texture2D(maskMap, vMapUv).r;
+
+float ocX = vObjPos.x * invRangeY;
+float ocYn = (vObjPos.y - minY) * invRangeY;
+float ocZ = vObjPos.z * invRangeY * frontSign;
+float ocY = clamp(ocYn, 0.0, 1.0);
+float ocFront = smoothstep(0.0, frontFade, ocZ);
+
+float ocGrain = ocNoise(vec3(ocX, ocYn, ocZ) * woolScale);
+float ocWeave = 0.5 + 0.5 * sin(ocX * weaveFreq) * sin(ocYn * weaveFreq);
+vec3 ocCol = mix(woolDark, woolLight, ocGrain * 0.6 + ocWeave * 0.4);
+
+float ocBoot = smoothstep(bootTop + 0.01, bootTop - 0.01, ocY);
+ocCol = mix(ocCol, bootColor, ocBoot);
+float ocBelt = smoothstep(beltWidth, beltWidth * 0.6, abs(ocY - beltY));
+ocCol = mix(ocCol, beltColor, ocBelt);
+
+float ocCollar = ocLine(ocY, collarY, pipeWidth);
+float ocHem = ocLine(ocY, hemY, pipeWidth);
+ocCol = mix(ocCol, trimColor, ocCollar);
+ocCol = mix(ocCol, trimColor, ocHem);
+
+float ocTorso = smoothstep(hemY, hemY + 0.004, ocY) * smoothstep(collarY, collarY - 0.004, ocY);
+float ocEdge = smoothstep(pipeWidth, pipeWidth * 0.5, abs(abs(ocX) - pipeX)) * ocTorso * ocFront;
+ocCol = mix(ocCol, trimColor, ocEdge);
+
+float ocRow = (ocY - buttonStartY) / buttonSpacing;
+float ocRowF = fract(ocRow + 0.5) - 0.5;
+float ocDy = ocRowF * buttonSpacing;
+float ocDx = abs(abs(ocX) - buttonOffset);
+float ocDist = sqrt(ocDx * ocDx + ocDy * ocDy);
+float ocLo = buttonStartY - 0.5 * buttonSpacing;
+float ocHi = buttonEndY + 0.5 * buttonSpacing;
+float ocInRange = smoothstep(ocLo, ocLo + 0.004, ocY) * smoothstep(ocHi, ocHi - 0.004, ocY);
+float ocButton = smoothstep(buttonRadius, buttonRadius * 0.7, ocDist) * ocInRange * ocFront;
+float ocDimple = smoothstep(buttonRadius * 0.55, buttonRadius * 0.35, ocDist);
+ocCol = mix(ocCol, mix(trimColor, trimShade, ocDimple * 0.6), ocButton);
+
+float ocBuckle = smoothstep(buckleWidth, buckleWidth * 0.75, abs(ocX))
+               * smoothstep(beltWidth * 0.9, beltWidth * 0.55, abs(ocY - beltY)) * ocFront;
+ocCol = mix(ocCol, trimColor, ocBuckle);
+
+diffuseColor.rgb = mix(diffuseColor.rgb, ocCol, ocMask);
+
+float ocMetal = max(max(max(ocCollar, ocHem), max(ocEdge, ocButton)), ocBuckle);
+totalEmissiveRadiance += trimColor * ocMetal * sheen * ocMask;
+`,
+});
+
+for (const k of Object.keys(SHADERS)) SHADERS[k].vertexPatch = vertexPatch(SHADERS[k].vertex);
+
+/* ============================================================================
+   built-in skins: the game's own entries (shaders we have the code for) and our designs
+   ========================================================================== */
+const GAME_SKINS = [
+  {"id":1,"seq":1,"rarity":1,"name":"DESERT OPS","playTime":180,"css":"skin-desert-ops","shader":{"type":"gradient_y","colors":["#C9B07A","#6F5A33"]}},
+  {"id":2,"seq":2,"rarity":1,"name":"NAVY SEAL","css":"skin-navy-seal","playTime":480,"shader":{"type":"gradient_y","colors":["#05090E","#0E2A3A"]}},
+  {"id":3,"seq":3,"rarity":2,"name":"NIGHT SPECTRE","css":"skin-nightfall-spectre","playTime":900,"shader":{"type":"gradient_y_3stop","maskChannel":"r","colors":["#1a0f5e","#7b3ff5","#33ccff"],"stops":[0,0.525,0.775],"contrast":1,"noise":{"amount":0.12,"scale":25}}},
+  {"id":4,"seq":4,"rarity":2,"name":"ARTIC WOLF","css":"skin-artic-wolf","coinsCost":350,"shader":{"type":"arctic_wolf","baseColor":"#D8E8F0","shadowColor":"#A0BCD0","glowColor":"#40D0FF","scale":22,"veinSharpness":0.8,"glowIntensity":3.5,"shimmerSpeed":1.2,"crackDrift":0.08,"specularSharpness":40,"specularIntensity":2.5,"fresnelPower":3,"fresnelIntensity":0.8,"fresnelColor":"#40D0FF","snowScale":35,"snowSpeed":0.8,"snowIntensity":1.5}},
+  {"id":6,"seq":9,"rarity":3,"name":"CRIMSON APEX","css":"skin-black-apex","coinsCost":3000,"shader":{"type":"crimson_apex","maskChannel":"r","baseColor":"#050505","accentColor":"#CC0000","glowColor":"#FF3030","stripeSpeed":1.5,"stripeScale":4,"stripeWidth":0.15,"pulseSpeed":0.6,"pulseIntensity":0.6,"scanlineSpeed":0.25,"scanlineIntensity":0.1,"fresnelPower":5,"fresnelIntensity":0.4}},
+  {"id":7,"seq":10,"rarity":4,"name":"VOID REAVER","css":"skin-void-reaver","coinsCost":5000,"shader":{"type":"void_reaver","maskChannel":"r","baseColor":"#020308","veinColorA":"#1E90FF","veinColorB":"#88CCFF","glowColor":"#E0F0FF","veinScale":8,"veinSpeed":0.6,"veinSharpness":0.55,"veinIntensity":2.5,"colorShiftSpeed":0.8,"sparkleScale":35,"sparkleSpeed":1.5,"sparkleIntensity":3,"fresnelPower":3.5,"fresnelIntensity":0.8}},
+  {"id":51,"seq":14.5,"rarity":6,"name":"WARLORD","css":"skin-warlord","reward":"clan","shader":{"type":"warlord","maskChannel":"r","ironDark":"#14100E","ironLight":"#4A423C","paintColor":"#8E1018","tallyHotColor":"#FFAA33","tallyCoolColor":"#661010","emberColor":"#FF5522","fresnelColor":"#B01822","ironScale":14,"tallyScale":4.5,"tallyDepth":0.75,"sweepSpeed":0.18,"coolRate":5,"heatIntensity":2.4,"flashIntensity":3.5,"paintFreq":1.4,"paintAngle":0.6,"paintWidth":0.09,"paintRoughness":0.12,"emberScale":11,"emberDrift":0.15,"emberIntensity":0.9,"fresnelPower":3,"fresnelIntensity":0.55}},
+];
+
+const OUR_SKINS = [
+  {"id":56,"seq":100,"rarity":3,"name":"AURORA DRIFT","css":"skin-aurora-drift","shader":{"type":"gradient_y_3stop","maskChannel":"r","colors":["#0A0F3C","#12E3B0","#FF5FD2"],"stops":[0,0.5,0.85],"contrast":1.15,"noise":{"amount":0.22,"scale":45}}},
+  {"id":57,"seq":100,"rarity":4,"name":"ANDROMEDA","css":"skin-andromeda","shader":{"type":"gradient_y_3stop","maskChannel":"r","colors":["#02030F","#4B1FA0","#FF7BE5"],"stops":[0,0.55,0.9],"contrast":1.3,"noise":{"amount":0.5,"scale":90}}},
+  {"id":58,"seq":100,"rarity":3,"name":"NIGHT OFFICER","css":"skin-night-officer","shader":{"type":"officer_coat","maskChannel":"r"}},
+];
+
+/* ============================================================================
+   state
+   ========================================================================== */
+const state = {
+  mine: [], active: null, pinned: null, instances: [],
+  model: null, origMats: [], meshNames: [], meshOn: new Map(),
+  frameBox: new THREE.Box3(), minY: 0, range: 1, autoMinY: 0, autoRange: 1, sep: 1,
+  maskTex: null, time: 0, playing: false, turntable: true,
+};
+const timeU = { value: 0 };
+
+const whiteTex = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+whiteTex.colorSpace = THREE.SRGBColorSpace;
+whiteTex.needsUpdate = true;
+state.maskTex = whiteTex;
+
+/* ============================================================================
+   three.js scene
+   ========================================================================== */
+const cv = $('cv');
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0b0e13');
+const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 200);
+const controls = new OrbitControls(camera, cv);
+controls.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x232a38, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(2.5, 4, 3); scene.add(key);
+const rim = new THREE.DirectionalLight(0x9db8ff, 1.0); rim.position.set(-3, 2.5, -3); scene.add(rim);
+const fill = new THREE.DirectionalLight(0xffffff, 0.5); fill.position.set(-2, 1, 3); scene.add(fill);
+const grid = new THREE.GridHelper(6, 24, 0x2a3140, 0x1b212c);
+scene.add(grid);
+
+function resize() {
+  const r = stage.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / r.height;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+/* ============================================================================
+   model: placeholder, .glb loading, baking parts into character space
+   ========================================================================== */
+function buildPlaceholder() {
+  const parts = [];
+  const add = (geo, x, y, z) => { geo.translate(x, y, z); parts.push(geo); };
+  add(new THREE.BoxGeometry(0.2, 0.72, 0.2), -0.13, 0.36, 0);
+  add(new THREE.BoxGeometry(0.2, 0.72, 0.2), 0.13, 0.36, 0);
+  add(new THREE.BoxGeometry(0.5, 0.62, 0.28), 0, 1.03, 0);
+  add(new THREE.BoxGeometry(0.14, 0.62, 0.16), -0.34, 1.03, 0);
+  add(new THREE.BoxGeometry(0.14, 0.62, 0.16), 0.34, 1.03, 0);
+  add(new THREE.SphereGeometry(0.17, 28, 18), 0, 1.52, 0);
+  const geo = BufferGeometryUtils.mergeGeometries(parts);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0 }));
+  mesh.name = 'placeholder body';
+  const g = new THREE.Group();
+  g.add(mesh);
+  return g;
+}
+
+function setModel(root, label) {
+  root.updateMatrixWorld(true);
+  const baked = [];
+  root.traverse((o) => { if (o.isMesh && !o.isSkinnedMesh) baked.push(o); });
+  for (const o of baked) {
+    const g = o.geometry.clone();
+    g.applyMatrix4(o.matrixWorld);
+    o.geometry = g;
+    o.removeFromParent();
+    o.position.set(0, 0, 0);
+    o.quaternion.identity();
+    o.scale.set(1, 1, 1);
+    o.updateMatrix();
+  }
+  const model = new THREE.Group();
+  model.add(root);
+  for (const o of baked) model.add(o);
+
+  const box = new THREE.Box3();
+  const origMats = [];
+  const names = [];
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    o.geometry.computeBoundingBox();
+    box.union(o.geometry.boundingBox);
+    origMats.push(o.material);
+    names.push(o.name || ('mesh ' + origMats.length));
+  });
+  if (!origMats.length || box.isEmpty()) { toast('No meshes found in that file'); return false; }
+
+  state.model = model;
+  state.origMats = origMats;
+  state.meshNames = names;
+  state.meshOn = new Map();
+  state.autoMinY = box.min.y;
+  state.autoRange = Math.max(box.max.y - box.min.y, 1e-6);
+  state.minY = state.autoMinY;
+  state.range = state.autoRange;
+  state.frameBox = new THREE.Box3().setFromObject(model);
+  const size = state.frameBox.getSize(new THREE.Vector3());
+  state.sep = Math.max(size.x, size.y * 0.4) * 1.1;
+  grid.scale.setScalar(Math.max(size.y, 0.1) / 1.8);
+  $('minY').value = +state.minY.toFixed(4);
+  $('rangeY').value = +state.range.toFixed(4);
+  $('modelStatus').textContent = label + ' - ' + origMats.length + ' mesh(es), height ' + state.autoRange.toFixed(3);
+  renderMeshList();
+  resetCamera();
+  return true;
+}
+
+function resetCamera() {
+  const c = state.frameBox.getCenter(new THREE.Vector3());
+  const size = state.frameBox.getSize(new THREE.Vector3());
+  const h = Math.max(size.y, 0.1);
+  const wide = state.pinned ? state.sep : 0;
+  camera.near = h / 100;
+  camera.far = h * 80;
+  camera.updateProjectionMatrix();
+  camera.position.set(c.x, c.y + h * 0.08, c.z + h * 1.9 + wide * 0.8);
+  controls.target.copy(c);
+  controls.update();
+}
+
+async function loadGLBFromUrl(url, label) {
+  const gltf = await new Promise((res, rej) => new GLTFLoader().load(url, res, undefined, rej));
+  if (setModel(gltf.scene, label)) { rebuildInstances(); resetCamera(); return true; }
+  return false;
+}
+
+function renderMeshList() {
+  const box = $('meshList');
+  box.innerHTML = '';
+  state.meshNames.forEach((name, i) => {
+    const row = el('label', 'mesh');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = state.meshOn.get(i) !== false;
+    cb.onchange = () => { state.meshOn.set(i, cb.checked); applyAll(); };
+    row.append(cb, el('span', '', name));
+    box.append(row);
+  });
+}
+
+function setMask(url, label) {
+  new THREE.TextureLoader().load(url, (tex) => {
+    tex.flipY = false;
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.needsUpdate = true;
+    state.maskTex = tex;
+    for (const inst of state.instances) if (inst.uniforms.maskMap) inst.uniforms.maskMap.value = tex;
+    toast('Mask loaded: ' + label);
+  }, undefined, () => toast('Could not read that mask image'));
+}
+
+/* ============================================================================
+   instances and materials
+   ========================================================================== */
+function activeInst() { return state.instances[state.instances.length - 1]; }
+
+function fillUniforms(inst) {
+  const sh = inst.skin.shader;
+  const def = SHADERS[sh.type];
+  if (!def) return;
+  const u = inst.uniforms;
+  if (!u.maskMap) u.maskMap = { value: state.maskTex };
+  u.maskMap.value = state.maskTex;
+  u.time = timeU;
+  if (!u.minY) u.minY = { value: 0 };
+  if (!u.invRangeY) u.invRangeY = { value: 1 };
+  u.minY.value = state.minY;
+  u.invRangeY.value = 1 / state.range;
+  def.fill(u, sh);
+}
+
+function makeSkinMaterial(orig, def, inst) {
+  const base = (orig && orig.isMeshStandardMaterial)
+    ? orig.clone()
+    : new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0 });
+  if (!base.map) base.map = whiteTex;
+  base.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, inst.uniforms);
+    shader.vertexShader = def.vertexPatch(shader.vertexShader);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\n' + def.fragCommon)
+      .replace('#include <map_fragment>', '#include <map_fragment>\n' + def.fragMap);
+  };
+  base.customProgramCacheKey = () => 'skinlab-' + def.key;
+  base.needsUpdate = true;
+  return base;
+}
+
+function applySkin(inst) {
+  const def = SHADERS[inst.skin.shader.type];
+  for (const m of inst.made) m.dispose();
+  inst.made = [];
+  if (def) fillUniforms(inst);
+  for (const part of inst.meshes) {
+    const on = state.meshOn.get(part.idx) !== false;
+    const mk = (orig) => {
+      if (!def || !on) return orig;
+      const mat = makeSkinMaterial(orig, def, inst);
+      inst.made.push(mat);
+      return mat;
+    };
+    part.mesh.material = Array.isArray(part.orig) ? part.orig.map(mk) : mk(part.orig);
+  }
+}
+
+function buildInstance(skin, x) {
+  const root = SkeletonUtils.clone(state.model);
+  root.position.set(x, 0, 0);
+  const inst = { skin, root, uniforms: {}, meshes: [], made: [] };
+  let idx = 0;
+  root.traverse((o) => {
+    if (o.isMesh) { inst.meshes.push({ mesh: o, orig: state.origMats[idx], idx }); idx++; }
+  });
+  applySkin(inst);
+  return inst;
+}
+
+function disposeInst(inst) {
+  scene.remove(inst.root);
+  for (const m of inst.made) m.dispose();
+}
+
+function rebuildInstances() {
+  if (!state.model || !state.active) return;
+  for (const inst of state.instances) disposeInst(inst);
+  state.instances = [];
+  if (state.pinned) {
+    state.instances.push(buildInstance(state.pinned, -state.sep / 2));
+    state.instances.push(buildInstance(state.active, state.sep / 2));
+  } else {
+    state.instances.push(buildInstance(state.active, 0));
+  }
+  for (const inst of state.instances) scene.add(inst.root);
+  const lab = $('cmpLabels');
+  lab.innerHTML = '';
+  if (state.pinned) { lab.append(el('span', '', 'Pinned: ' + (state.pinned.name || '')), el('span', '', 'Editing: ' + (state.active.name || ''))); }
+  updateNote();
+}
+
+function applyAll() { for (const inst of state.instances) applySkin(inst); }
+
+/* ============================================================================
+   skins: normalizing, library, persistence
+   ========================================================================== */
+function normalizeSkin(skin) {
+  skin.shader = skin.shader || { type: 'none' };
+  const sh = skin.shader;
+  const def = SHADERS[sh.type];
+  if (!def) return skin;
+  const d = clone(def.defaults);
+  if (def.editor === 'grad2') {
+    sh.colors = fixList(sh.colors, d.colors);
+  } else if (def.editor === 'grad3') {
+    sh.colors = fixList(sh.colors, d.colors);
+    sh.stops = fixNums(sh.stops, d.stops);
+    if (typeof sh.contrast !== 'number') sh.contrast = d.contrast;
+    sh.noise = Object.assign({}, d.noise, sh.noise || {});
+  } else {
+    for (const k of Object.keys(d)) if (sh[k] === undefined) sh[k] = d[k];
+  }
+  if (!sh.maskChannel) sh.maskChannel = 'r';
+  return skin;
+}
+
+function newSkin(type) {
+  const def = SHADERS[type];
+  return normalizeSkin({
+    id: 100 + state.mine.length, seq: 100, rarity: 3, name: 'NEW SKIN', css: 'skin-new',
+    shader: def ? Object.assign({ type, maskChannel: 'r' }, clone(def.defaults)) : { type: 'none' },
+  });
+}
+
+function swatch(entry) {
+  const sh = entry.shader || {};
+  let cols = [];
+  if (Array.isArray(sh.colors)) cols = sh.colors.slice(0, 3);
+  else for (const k of Object.keys(sh)) {
+    if (typeof sh[k] === 'string' && /^#[0-9a-f]{6}$/i.test(sh[k])) { cols.push(sh[k]); if (cols.length === 3) break; }
+  }
+  if (!cols.length) return '#444';
+  if (cols.length === 1) cols.push(cols[0]);
+  return 'linear-gradient(90deg,' + cols.join(',') + ')';
+}
+
+function loadStore() {
+  try {
+    const j = JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
+    return Array.isArray(j.mine) ? j.mine : [];
+  } catch (e) { return []; }
+}
+function persist() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ mine: state.mine })); }
+  catch (e) { toast('Could not save here (storage blocked or full). Use Download instead.'); }
+}
+const uid = () => 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+function selectSkin(entry, src) {
+  const sk = normalizeSkin(clone(entry));
+  sk.__src = src;
+  sk.__ref = src + ':' + (entry.__uid || entry.name);
+  if (src === 'mine') sk.__uid = entry.__uid;
+  state.active = sk;
+  renderEditor();
+  syncJson();
+  rebuildInstances();
+  renderLibrary();
+}
+
+function renderLibGroup(boxId, list, src) {
+  const box = $(boxId);
+  box.innerHTML = '';
+  if (!list.length) { box.append(el('div', 'empty', src === 'mine' ? 'Nothing saved yet. Edit a skin and press Save.' : '')); return; }
+  for (const entry of list) {
+    const ref = src + ':' + (entry.__uid || entry.name);
+    const supported = !!SHADERS[entry.shader && entry.shader.type];
+    const b = el('button', 'item' + (state.active && state.active.__ref === ref ? ' on' : '') + (supported ? '' : ' dim'));
+    const sw = el('span', 'sw'); sw.style.background = swatch(entry);
+    b.append(sw, el('span', 'nm', entry.name || '(unnamed)'));
+    if (!supported) b.append(el('span', 'tag', 'no shader'));
+    b.onclick = () => selectSkin(entry, src);
+    box.append(b);
+  }
+}
+function renderLibrary() {
+  renderLibGroup('libGame', GAME_SKINS, 'game');
+  renderLibGroup('libOurs', OUR_SKINS, 'ours');
+  renderLibGroup('libMine', state.mine, 'mine');
+}
+
+/* ============================================================================
+   editor panel
+   ========================================================================== */
+function syncJson() { $('skJson').value = JSON.stringify(clean(state.active), null, 2); }
+function touched() { const inst = activeInst(); if (inst) fillUniforms(inst); syncJson(); }
+
+function updateNote() {
+  const n = $('note');
+  const sh = state.active.shader;
+  const def = SHADERS[sh.type];
+  n.className = 'note';
+  if (!def) {
+    n.classList.add('warn');
+    n.textContent = sh.type === 'none'
+      ? 'No shader: the plain model. Pick a shader type above.'
+      : 'No renderer for "' + sh.type + '" yet. Paste that skin\'s shader code from the game into the chat and it can be added.';
+    return;
+  }
+  const bits = [];
+  if (def.animated) bits.push('This skin animates: press Time to play it.');
+  if (state.active.__src !== 'mine') bits.push('Edits are live. Press Save to keep a copy in My skins.');
+  if (!bits.length) bits.push('Edits are live. Press Save to keep it.');
+  n.textContent = bits.join(' ');
+}
+
+function rangeFor(def, k) {
+  if (def.ranges && def.ranges[k]) return def.ranges[k];
+  const v = Number(def.defaults[k]) || 1;
+  return [0, Math.max(1, +(v * 3).toFixed(2)), v < 1 ? 0.005 : (v < 10 ? 0.05 : 0.5)];
+}
+
+function colorRow(box, label, get, set) {
+  const row = el('div', 'row');
+  row.append(el('span', 'lab', label));
+  const ctl = el('div', 'ctl');
+  const cp = document.createElement('input'); cp.type = 'color'; cp.value = toHex(get());
+  const tx = document.createElement('input'); tx.type = 'text'; tx.className = 'hex'; tx.value = String(get()).toUpperCase();
+  cp.oninput = () => { const v = cp.value.toUpperCase(); tx.value = v; set(v); };
+  tx.onchange = () => { const v = normHex(tx.value); if (v) { cp.value = v.toLowerCase(); tx.value = v; set(v); } else tx.value = String(get()).toUpperCase(); };
+  ctl.append(cp, tx);
+  row.append(ctl);
+  box.append(row);
+}
+
+function numRow(box, label, get, set, rng) {
+  const [min, max, step] = rng;
+  const row = el('div', 'row');
+  row.append(el('span', 'lab', label));
+  const ctl = el('div', 'ctl');
+  const r = document.createElement('input'); r.type = 'range'; r.min = min; r.max = max; r.step = step; r.value = get();
+  const n = document.createElement('input'); n.type = 'number'; n.className = 'n'; n.step = step; n.value = get();
+  r.oninput = () => { const v = parseFloat(r.value); n.value = v; set(v); };
+  n.onchange = () => { const v = parseFloat(n.value); if (!isNaN(v)) { r.value = v; set(v); } };
+  ctl.append(r, n);
+  row.append(ctl);
+  box.append(row);
+}
+
+function fillTypeSelects() {
+  const mk = (sel, withNone) => {
+    sel.innerHTML = '';
+    if (withNone) { const o = document.createElement('option'); o.value = 'none'; o.textContent = 'None (plain model)'; sel.append(o); }
+    for (const k of Object.keys(SHADERS)) { const o = document.createElement('option'); o.value = k; o.textContent = SHADERS[k].label; sel.append(o); }
+  };
+  mk($('skType'), true);
+  mk($('newType'), false);
+}
+
+function renderEditor() {
+  const sk = state.active;
+  const sh = sk.shader;
+  const def = SHADERS[sh.type];
+  $('skName').value = sk.name || '';
+  const sel = $('skType');
+  if (!def && sh.type !== 'none' && ![...sel.options].some((o) => o.value === sh.type)) {
+    const o = document.createElement('option'); o.value = sh.type; o.textContent = sh.type + ' (no renderer)'; sel.append(o);
+  }
+  sel.value = sh.type;
+  const box = $('controls');
+  box.innerHTML = '';
+  updateNote();
+  if (!def) return;
+
+  if (def.editor === 'grad2') {
+    box.append(el('h4', '', 'Colors'));
+    colorRow(box, 'Bottom', () => sh.colors[0], (v) => { sh.colors[0] = v; touched(); });
+    colorRow(box, 'Top', () => sh.colors[1], (v) => { sh.colors[1] = v; touched(); });
+  } else if (def.editor === 'grad3') {
+    box.append(el('h4', '', 'Colors and where they sit'));
+    const names = ['Bottom', 'Middle', 'Top'];
+    for (let i = 0; i < 3; i++) {
+      colorRow(box, names[i], () => sh.colors[i], (v) => { sh.colors[i] = v; touched(); });
+      numRow(box, names[i] + ' stop', () => sh.stops[i], (v) => { sh.stops[i] = v; touched(); }, [0, 1, 0.005]);
+    }
+    box.append(el('h4', '', 'Look'));
+    numRow(box, 'Contrast', () => sh.contrast, (v) => { sh.contrast = v; touched(); }, [0.1, 4, 0.01]);
+    numRow(box, 'Noise amount', () => sh.noise.amount, (v) => { sh.noise.amount = v; touched(); }, [0, 1, 0.005]);
+    numRow(box, 'Noise scale', () => sh.noise.scale, (v) => { sh.noise.scale = v; touched(); }, [1, 300, 1]);
+  } else {
+    box.append(el('h4', '', 'Colors'));
+    for (const k of def.colorKeys) colorRow(box, k, () => sh[k], (v) => { sh[k] = v; touched(); });
+    box.append(el('h4', '', 'Numbers'));
+    for (const k of def.numKeys) numRow(box, k, () => sh[k], (v) => { sh[k] = v; touched(); }, rangeFor(def, k));
+  }
+}
+
+function setType(type) {
+  const def = SHADERS[type];
+  state.active.shader = def ? Object.assign({ type, maskChannel: 'r' }, clone(def.defaults)) : { type: 'none' };
+  normalizeSkin(state.active);
+  renderEditor();
+  syncJson();
+  rebuildInstances();
+}
+
+function applyJson() {
+  try {
+    const j = JSON.parse($('skJson').value);
+    if (!j || typeof j !== 'object' || !j.shader) throw new Error('needs a "shader" object');
+    const keep = { __src: state.active.__src, __uid: state.active.__uid, __ref: state.active.__ref };
+    state.active = Object.assign(normalizeSkin(j), keep);
+    renderEditor();
+    syncJson();
+    rebuildInstances();
+    toast('JSON applied');
+  } catch (e) { toast('JSON error: ' + e.message); }
+}
+
+/* ============================================================================
+   save, import, export
+   ========================================================================== */
+function saveActive() {
+  const sk = clone(state.active);
+  if (state.active.__src === 'mine' && state.active.__uid) {
+    const i = state.mine.findIndex((m) => m.__uid === state.active.__uid);
+    if (i >= 0) { sk.__uid = state.active.__uid; state.mine[i] = sk; }
+    else { sk.__uid = uid(); state.mine.push(sk); }
+  } else {
+    sk.__uid = uid();
+    state.mine.push(sk);
+  }
+  sk.__src = 'mine';
+  persist();
+  state.active.__src = 'mine';
+  state.active.__uid = sk.__uid;
+  state.active.__ref = 'mine:' + sk.__uid;
+  renderLibrary();
+  updateNote();
+  toast('Saved to My skins');
+}
+
+function duplicateActive() {
+  const sk = clone(state.active);
+  sk.name = (sk.name || 'SKIN') + ' COPY';
+  sk.__uid = uid(); sk.__src = 'mine';
+  state.mine.push(sk);
+  persist();
+  selectSkin(sk, 'mine');
+  toast('Duplicated');
+}
+
+function deleteActive() {
+  if (state.active.__src !== 'mine' || !state.active.__uid) { toast('Only your saved skins can be deleted'); return; }
+  if (!confirm('Delete "' + state.active.name + '" from My skins?')) return;
+  state.mine = state.mine.filter((m) => m.__uid !== state.active.__uid);
+  persist();
+  selectSkin(GAME_SKINS[2], 'game');
+  toast('Deleted');
+}
+
+function importText(text) {
+  let data;
+  try { data = JSON.parse(text); } catch (e) { toast('That is not valid JSON: ' + e.message); return; }
+  let list = Array.isArray(data) ? data : (data && Array.isArray(data.skins) ? data.skins : [data]);
+  list = list.filter((s) => s && typeof s === 'object' && s.shader && typeof s.shader.type === 'string');
+  if (!list.length) { toast('No skins found (each needs a "shader" with a "type")'); return; }
+  let ok = 0, noRender = 0, last = null;
+  for (const raw of list) {
+    const sk = normalizeSkin(clone(raw));
+    sk.__uid = uid(); sk.__src = 'mine';
+    state.mine.push(sk);
+    last = sk;
+    if (SHADERS[sk.shader.type]) ok++; else noRender++;
+  }
+  persist();
+  renderLibrary();
+  if (last) selectSkin(last, 'mine');
+  toast('Imported ' + list.length + ' skin(s): ' + ok + ' can render' + (noRender ? ', ' + noRender + ' need a shader added' : ''));
+}
+
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); toast('Copied'); }
+  catch (e) { $('skJson').select(); document.execCommand('copy'); toast('Copied'); }
+}
+
+/* ============================================================================
+   wiring
+   ========================================================================== */
+function wire() {
+  $('skName').oninput = (e) => { state.active.name = e.target.value; syncJson(); };
+  $('skType').onchange = (e) => setType(e.target.value);
+  $('btnApplyJson').onclick = applyJson;
+  $('btnCopy').onclick = () => copyText($('skJson').value);
+  $('btnDownload').onclick = () => download(slug(state.active.name) + '.json', JSON.stringify(clean(state.active), null, 2));
+  $('btnSave').onclick = saveActive;
+  $('btnDup').onclick = duplicateActive;
+  $('btnDel').onclick = deleteActive;
+  $('btnNew').onclick = () => {
+    const sk = newSkin($('newType').value);
+    sk.__uid = uid(); sk.__src = 'mine';
+    state.mine.push(sk);
+    persist();
+    selectSkin(sk, 'mine');
+  };
+  $('btnExportAll').onclick = () => {
+    if (!state.mine.length) { toast('Nothing in My skins yet'); return; }
+    download('my-skins.json', JSON.stringify(state.mine.map(clean), null, 2));
+  };
+  $('btnImport').onclick = () => $('dlgImport').showModal();
+  $('impClose').onclick = () => $('dlgImport').close();
+  $('impGo').onclick = () => { importText($('impText').value); $('impText').value = ''; $('dlgImport').close(); };
+  $('impFile').onchange = async (e) => { const f = e.target.files[0]; if (f) $('impText').value = await f.text(); };
+
+  $('fileModel').onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const url = URL.createObjectURL(f);
+    try { await loadGLBFromUrl(url, f.name); toast('Model loaded: ' + f.name); }
+    catch (err) { toast('Could not read that .glb (Draco/meshopt compression is not supported)'); }
+    e.target.value = '';
+  };
+  $('fileMask').onchange = (e) => { const f = e.target.files[0]; if (f) setMask(URL.createObjectURL(f), f.name); e.target.value = ''; };
+  $('btnClearMask').onclick = () => {
+    state.maskTex = whiteTex;
+    for (const inst of state.instances) if (inst.uniforms.maskMap) inst.uniforms.maskMap.value = whiteTex;
+    toast('Mask cleared: skin covers the whole mesh');
+  };
+  const rangeChanged = () => {
+    const a = parseFloat($('minY').value), b = parseFloat($('rangeY').value);
+    if (!isNaN(a)) state.minY = a;
+    if (!isNaN(b) && b > 0) state.range = b;
+    for (const inst of state.instances) fillUniforms(inst);
+  };
+  $('minY').onchange = rangeChanged;
+  $('rangeY').onchange = rangeChanged;
+  $('btnAutoRange').onclick = () => {
+    state.minY = state.autoMinY; state.range = state.autoRange;
+    $('minY').value = +state.minY.toFixed(4); $('rangeY').value = +state.range.toFixed(4);
+    for (const inst of state.instances) fillUniforms(inst);
+  };
+
+  $('btnTurn').onclick = (e) => { state.turntable = !state.turntable; e.target.classList.toggle('on', state.turntable); };
+  $('btnPlay').onclick = (e) => { state.playing = !state.playing; e.target.classList.toggle('on', state.playing); e.target.innerHTML = state.playing ? '&#10073;&#10073; Time' : '&#9654; Time'; };
+  $('timeSlider').oninput = (e) => { state.time = parseFloat(e.target.value); timeU.value = state.time; };
+  $('btnReset').onclick = () => { for (const inst of state.instances) inst.root.rotation.y = 0; resetCamera(); };
+  $('btnShot').onclick = () => {
+    renderer.render(scene, camera);
+    cv.toBlob((b) => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = slug(state.active.name) + '.png'; a.click(); }, 'image/png');
+  };
+  $('btnPin').onclick = () => { state.pinned = clone(state.active); rebuildInstances(); resetCamera(); toast('Pinned on the left. Keep editing on the right.'); };
+  $('btnUnpin').onclick = () => { state.pinned = null; rebuildInstances(); resetCamera(); };
+
+  const bgBox = $('bgs');
+  for (const c of ['#0b0e13', '#1d2430', '#5b6577', '#d9dde5', '#0e3b5f']) {
+    const b = el('button', 'bg' + (c === '#0b0e13' ? ' on' : ''));
+    b.style.background = c; b.title = 'Background';
+    b.onclick = () => { scene.background = new THREE.Color(c); for (const x of bgBox.children) x.classList.remove('on'); b.classList.add('on'); };
+    bgBox.append(b);
+  }
+}
+
+/* ============================================================================
+   main loop and startup
+   ========================================================================== */
+const clock = new THREE.Clock();
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(clock.getDelta(), 0.1);
+  if (state.playing) {
+    state.time = (state.time + dt) % 60;
+    timeU.value = state.time;
+    $('timeSlider').value = state.time;
+  }
+  if (state.turntable) for (const inst of state.instances) inst.root.rotation.y += dt * 0.6;
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+async function tryDefault(url, loader) {
+  try {
+    const r = await fetch(url, { method: 'HEAD' });
+    const type = r.headers.get('content-type') || '';
+    if (r.ok && !type.includes('text/html')) await loader();
+  } catch (e) { /* not there, that is fine */ }
+}
+
+async function start() {
+  fillTypeSelects();
+  state.mine = loadStore();
+  wire();
+  resize();
+  setModel(buildPlaceholder(), 'Placeholder body (load your .glb for the real character)');
+  selectSkin(GAME_SKINS[2], 'game');
+  frame();
+  await tryDefault(DEFAULT_MODEL, () => loadGLBFromUrl(DEFAULT_MODEL, DEFAULT_MODEL));
+  await tryDefault(DEFAULT_MASK, async () => setMask(DEFAULT_MASK, DEFAULT_MASK));
+}
+start();
+</script>
+</body>
+</html>
