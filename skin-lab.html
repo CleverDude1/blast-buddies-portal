@@ -975,42 +975,124 @@ totalEmissiveRadiance += trimColor * ocMetal * sheen * ocMask;
    BEFORE the line:  for (const k of Object.keys(SHADERS)) SHADERS[k].vertexPatch = ...
    Positions are fractions of body height (tuned to the reference picture). */
 
+/* PASTE THIS INTO skin-lab.html
+   Place it right AFTER the SHADERS.officer_coat = generic(...) block and
+   BEFORE the line:  for (const k of Object.keys(SHADERS)) SHADERS[k].vertexPatch = ...
+   Positions are fractions of body height (tuned to the reference picture). */
+
 SHADERS.dress_uniform = generic('dress_uniform', {
   label: 'Dress uniform (ours: piping, cords, gold sweep)',
   vertex: 'world', animated: true,
-  colorKeys: ['woolDark', 'woolLight', 'pipeColor', 'buttonColor', 'goldColor', 'goldHotColor', 'beltColor', 'cordColor', 'rimColor', 'veinColor'],
-  numKeys: ['woolScale', 'weaveFreq', 'hemY', 'beltY', 'beltWidth', 'collarY', 'shoulderY',
-    'buttonStartY', 'buttonRows', 'buttonSpacing', 'buttonOffset', 'buttonRadius',
-    'pipeX', 'pipeWidth', 'buckleWidth', 'frontSign', 'armInner', 'cuffY',
-    'legStripeX', 'legStripeW', 'capBandY', 'epInner', 'epOuter',
-    'aigX', 'aigY', 'aigR',
-    'sweepSpeed', 'sweepMode', 'coolRate', 'glowIntensity', 'flashIntensity', 'pipeGlow', 'sheen',
-    'rimIntensity', 'rimPower', 'specIntensity', 'specPower', 'glossSheen', 'sparkle', 'bodyGlow',
-    'veinScale', 'veinSharpness', 'veinIntensity', 'veinDrift', 'shimmerSpeed', 'snowScale', 'snowSpeed', 'snowIntensity'],
+  colorKeys: ['woolDark', 'woolLight', 'pipeColor', 'buttonColor', 'goldColor', 'goldHotColor', 'beltColor', 'cordColor', 'rimColor', 'veinColor', 'veinColorB'],
+  numKeys: ['woolScale', 'weaveFreq', 'hemY', 'beltY', 'beltWidth', 'collarY', 'shoulderY', 'buttonStartY', 'buttonRows', 'buttonSpacing', 'buttonOffset', 'buttonRadius', 'pipeX', 'pipeWidth', 'buckleWidth', 'frontSign', 'armInner', 'cuffY', 'legStripeX', 'legStripeW', 'capBandY', 'epInner', 'epOuter', 'aigX', 'aigY', 'aigR', 'sweepSpeed', 'sweepMode', 'coolRate', 'glowIntensity', 'flashIntensity', 'pipeGlow', 'sheen', 'rimIntensity', 'rimPower', 'specIntensity', 'specPower', 'sparkle', 'bodyGlow', 'veinScale', 'veinSharpness', 'veinIntensity', 'veinSpeed', 'colorShift', 'snowScale', 'snowSpeed', 'snowIntensity'],
   ranges: {
-    woolScale: [10, 300, 1], weaveFreq: [0, 800, 1],
-    hemY: [0, 1, 0.005], beltY: [0, 1, 0.005], beltWidth: [0.005, 0.05, 0.001], collarY: [0, 1, 0.005], shoulderY: [0, 1, 0.005],
-    buttonStartY: [0, 1, 0.005], buttonRows: [0, 10, 1], buttonSpacing: [0.01, 0.15, 0.001], buttonOffset: [0, 0.15, 0.001], buttonRadius: [0.002, 0.04, 0.0005],
-    pipeX: [0, 0.2, 0.001], pipeWidth: [0.001, 0.02, 0.0005], buckleWidth: [0, 0.08, 0.001], frontSign: [-1, 1, 2],
-    armInner: [0.05, 0.4, 0.005], cuffY: [0, 1, 0.005], legStripeX: [0, 0.3, 0.001], legStripeW: [0.001, 0.02, 0.0005],
-    capBandY: [0, 1, 0.005], epInner: [0, 0.3, 0.005], epOuter: [0, 0.4, 0.005],
-    aigX: [-0.3, 0.3, 0.005], aigY: [0, 1, 0.005], aigR: [0.01, 0.12, 0.002],
-    sweepSpeed: [0, 1, 0.01], sweepMode: [0, 1, 1], coolRate: [0.5, 40, 0.5],
-    glowIntensity: [0, 6, 0.05], flashIntensity: [0, 8, 0.05], pipeGlow: [0, 1, 0.01], sheen: [0, 1, 0.01],
-    rimIntensity: [0, 4, 0.05], rimPower: [0.5, 8, 0.1], specIntensity: [0, 8, 0.1], specPower: [2, 120, 1], glossSheen: [0, 2, 0.02], sparkle: [0, 8, 0.1], bodyGlow: [0, 3, 0.05],
-    veinScale: [2, 80, 0.5], veinSharpness: [0.5, 0.995, 0.005], veinIntensity: [0, 8, 0.1], veinDrift: [0, 1, 0.01], shimmerSpeed: [0, 6, 0.1], snowScale: [5, 120, 1], snowSpeed: [0, 4, 0.05], snowIntensity: [0, 6, 0.1],
+    woolScale: [10, 300, 1],
+    weaveFreq: [0, 800, 1],
+    hemY: [0, 1, 0.005],
+    beltY: [0, 1, 0.005],
+    beltWidth: [0.005, 0.05, 0.001],
+    collarY: [0, 1, 0.005],
+    shoulderY: [0, 1, 0.005],
+    buttonStartY: [0, 1, 0.005],
+    buttonRows: [0, 10, 1],
+    buttonSpacing: [0.01, 0.15, 0.001],
+    buttonOffset: [0, 0.15, 0.001],
+    buttonRadius: [0.002, 0.04, 0.0005],
+    pipeX: [0, 0.2, 0.001],
+    pipeWidth: [0.001, 0.02, 0.0005],
+    buckleWidth: [0, 0.08, 0.001],
+    frontSign: [-1, 1, 2],
+    armInner: [0.05, 0.4, 0.005],
+    cuffY: [0, 1, 0.005],
+    legStripeX: [0, 0.3, 0.001],
+    legStripeW: [0.001, 0.02, 0.0005],
+    capBandY: [0, 1, 0.005],
+    epInner: [0, 0.3, 0.005],
+    epOuter: [0, 0.4, 0.005],
+    aigX: [-0.3, 0.3, 0.005],
+    aigY: [0, 1, 0.005],
+    aigR: [0.01, 0.12, 0.002],
+    sweepSpeed: [0, 1, 0.01],
+    sweepMode: [0, 1, 1],
+    coolRate: [0.5, 40, 0.5],
+    glowIntensity: [0, 6, 0.05],
+    flashIntensity: [0, 8, 0.05],
+    pipeGlow: [0, 1, 0.01],
+    sheen: [0, 1, 0.01],
+    rimIntensity: [0, 4, 0.05],
+    rimPower: [0.5, 8, 0.1],
+    specIntensity: [0, 8, 0.1],
+    specPower: [2, 120, 1],
+    sparkle: [0, 8, 0.1],
+    bodyGlow: [0, 3, 0.05],
+    veinScale: [2, 80, 0.5],
+    veinSharpness: [0.3, 0.995, 0.005],
+    veinIntensity: [0, 8, 0.1],
+    veinSpeed: [0, 3, 0.02],
+    colorShift: [0, 4, 0.05],
+    snowScale: [5, 120, 1],
+    snowSpeed: [0, 4, 0.05],
+    snowIntensity: [0, 6, 0.1],
   },
   defaults: {
-    woolDark: '#050506', woolLight: '#15161B', pipeColor: '#E8EAEE', buttonColor: '#C7CBD3',
-    goldColor: '#C9A24A', goldHotColor: '#FFD36B', beltColor: '#0A0A0C', cordColor: '#D9D6CF', rimColor: '#FFC85A', veinColor: '#FFD36B',
-    woolScale: 110, weaveFreq: 320, hemY: 0.35, beltY: 0.457, beltWidth: 0.021, collarY: 0.775, shoulderY: 0.745,
-    buttonStartY: 0.50, buttonRows: 6, buttonSpacing: 0.042, buttonOffset: 0.036, buttonRadius: 0.012,
-    pipeX: 0.068, pipeWidth: 0.0045, buckleWidth: 0.04, frontSign: 1, armInner: 0.16, cuffY: 0.469,
-    legStripeX: 0.121, legStripeW: 0.004, capBandY: 0.925, epInner: 0.085, epOuter: 0.255,
-    aigX: -0.115, aigY: 0.715, aigR: 0.04,
-    sweepSpeed: 0.18, sweepMode: 1, coolRate: 9, glowIntensity: 3, flashIntensity: 3.5, pipeGlow: 0.3, sheen: 0.15,
-    rimIntensity: 1.0, rimPower: 3.5, specIntensity: 3, specPower: 30, glossSheen: 0.25, sparkle: 3, bodyGlow: 0.3,
-    veinScale: 22, veinSharpness: 0.93, veinIntensity: 3, veinDrift: 0.08, shimmerSpeed: 1.2, snowScale: 35, snowSpeed: 0.8, snowIntensity: 1.5,
+    woolDark: '#020308',
+    woolLight: '#0A0C12',
+    pipeColor: '#9CCBFF',
+    buttonColor: '#88CCFF',
+    goldColor: '#1E90FF',
+    goldHotColor: '#88CCFF',
+    beltColor: '#020308',
+    cordColor: '#7FB8F0',
+    rimColor: '#E0F0FF',
+    veinColor: '#1E90FF',
+    veinColorB: '#88CCFF',
+    woolScale: 110,
+    weaveFreq: 320,
+    hemY: 0.35,
+    beltY: 0.457,
+    beltWidth: 0.021,
+    collarY: 0.775,
+    shoulderY: 0.745,
+    buttonStartY: 0.5,
+    buttonRows: 6,
+    buttonSpacing: 0.042,
+    buttonOffset: 0.036,
+    buttonRadius: 0.012,
+    pipeX: 0.068,
+    pipeWidth: 0.0045,
+    buckleWidth: 0.04,
+    frontSign: 1,
+    armInner: 0.16,
+    cuffY: 0.469,
+    legStripeX: 0.121,
+    legStripeW: 0.004,
+    capBandY: 0,
+    epInner: 0.085,
+    epOuter: 0.255,
+    aigX: -0.115,
+    aigY: 0.715,
+    aigR: 0.04,
+    sweepSpeed: 0.18,
+    sweepMode: 1,
+    coolRate: 9,
+    glowIntensity: 3,
+    flashIntensity: 3.5,
+    pipeGlow: 0.3,
+    sheen: 0.1,
+    rimIntensity: 0.8,
+    rimPower: 3.5,
+    specIntensity: 3,
+    specPower: 30,
+    sparkle: 3,
+    bodyGlow: 0.25,
+    veinScale: 8,
+    veinSharpness: 0.6,
+    veinIntensity: 2.5,
+    veinSpeed: 0.6,
+    colorShift: 0.8,
+    snowScale: 35,
+    snowSpeed: 0.8,
+    snowIntensity: 1.2,
   },
   fragCommon: `
 varying vec3 vObjPos;
@@ -1066,15 +1148,15 @@ uniform float rimIntensity;
 uniform float rimPower;
 uniform float specIntensity;
 uniform float specPower;
-uniform float glossSheen;
 uniform float sparkle;
 uniform float bodyGlow;
 uniform vec3 veinColor;
+uniform vec3 veinColorB;
+uniform float veinSpeed;
+uniform float colorShift;
 uniform float veinScale;
 uniform float veinSharpness;
 uniform float veinIntensity;
-uniform float veinDrift;
-uniform float shimmerSpeed;
 uniform float snowScale;
 uniform float snowSpeed;
 uniform float snowIntensity;
@@ -1099,6 +1181,20 @@ float dcNoise(vec3 p) {
 // 1 when v is well inside w, fading to 0 at w
 float dcLE(float v, float w) { return 1.0 - smoothstep(w * 0.6, w, v); }
 float dcLine(float v, float c, float w) { return dcLE(abs(v - c), w); }
+float dcRidged(vec3 p) {
+    float v = 0.0;
+    float amp = 0.5;
+    float freq = 1.0;
+    for (int i = 0; i < 3; i++) {
+        float n = dcNoise(p * freq);
+        n = 1.0 - abs(n * 2.0 - 1.0);
+        n = n * n;
+        v += n * amp;
+        amp *= 0.5;
+        freq *= 2.1;
+    }
+    return v;
+}
 `,
   fragMap: `
 float dcMask = texture2D(maskMap, vMapUv).r;
@@ -1213,24 +1309,26 @@ float dcMetalM = max(dcGold, dcSilver);
 float dcSpN = dcNoise(vec3(dcX, dcYn, dcZr) * 240.0 + vec3(0.0, time * 2.0, 0.0));
 float dcSpark = smoothstep(0.84, 0.97, dcSpN) * (0.5 + 0.5 * sin(time * 10.0 + dcSpN * 40.0)) * dcMetalM;
 dcEm += rimColor * dcFres * rimIntensity;
-dcEm += vec3(1.0, 0.97, 0.9) * dcSpec * (glossSheen + specIntensity * dcMetalM);
+dcEm += vec3(0.85, 0.93, 1.0) * dcSpec * specIntensity * dcMetalM;
 dcEm += buttonColor * dcSilver * sheen;
 dcEm += mix(vec3(1.0), dcGlow, 0.5) * dcSpark * sparkle;
 dcEm += dcGlow * bodyGlow * (dcHeat * 0.6 + dcFlash * 0.5) * (0.4 + dcGrain * 0.6);
 
-// thin glowing veins: the game's Arctic Wolf crack pattern, but much finer
-vec3 dcVp = vObjPos * veinScale + vec3(0.0, time * veinDrift, 0.0);
-float dcVn = dcNoise(dcVp);
-float dcVeins = smoothstep(veinSharpness, 1.0, 1.0 - abs(dcVn * 2.0 - 1.0));
-float dcVsh = 0.75 + 0.25 * sin(time * shimmerSpeed + (dcVp.x + dcVp.y + dcVp.z) * 0.6);
-vec3 dcVcol = mix(veinColor, dcGlow, clamp(dcHeat, 0.0, 1.0));
-dcEm += dcVcol * dcVeins * veinIntensity * dcVsh * (1.0 - dcMetalM) * (1.0 + dcFlash * 1.5);
+// flowing veins, Void Reaver style: two ridged noise fields drifting in different directions
+vec3 dcVp = vObjPos * veinScale;
+float dcV1 = dcRidged(dcVp + vec3(time * veinSpeed * 0.3, -time * veinSpeed * 0.2, 0.0));
+float dcV2 = dcRidged(dcVp * 1.3 + vec3(0.0, time * veinSpeed * 0.15, -time * veinSpeed * 0.25) + 5.0);
+float dcVeins = smoothstep(veinSharpness, 1.0, max(dcV1, dcV2));
+float dcShift = mix(sin(time * colorShift) * 0.5 + 0.5, sin((vObjPos.x + vObjPos.y + vObjPos.z) * 3.0 + time * colorShift * 0.5) * 0.5 + 0.5, 0.5);
+vec3 dcVcol = mix(veinColor, veinColorB, dcShift);
+float dcVpulse = 0.8 + 0.2 * sin(time * 1.5 + dcV1 * 6.0);
+dcEm += dcVcol * dcVeins * veinIntensity * dcVpulse * (1.0 - dcMetalM) * (1.0 + dcFlash * 1.5);
 
 // falling glitter squares, like the snow in Arctic Wolf
 vec3 dcCell = floor(vObjPos * snowScale + vec3(0.0, -time * snowSpeed, 0.0));
 float dcSh = dcHash(dcCell);
 float dcSnow = smoothstep(0.92, 1.0, dcSh) * max(0.0, sin(dcSh * 6.283 + time * (1.0 + dcSh * 2.0)));
-dcEm += vec3(1.0, 0.95, 0.85) * dcSnow * snowIntensity;
+dcEm += vec3(0.75, 0.88, 1.0) * dcSnow * snowIntensity;
 totalEmissiveRadiance += dcEm * dcMask;
 `,
 });
