@@ -970,6 +970,11 @@ totalEmissiveRadiance += trimColor * ocMetal * sheen * ocMask;
    BEFORE the line:  for (const k of Object.keys(SHADERS)) SHADERS[k].vertexPatch = ...
    Positions are fractions of body height (tuned to the reference picture). */
 
+/* PASTE THIS INTO skin-lab.html
+   Place it right AFTER the SHADERS.officer_coat = generic(...) block and
+   BEFORE the line:  for (const k of Object.keys(SHADERS)) SHADERS[k].vertexPatch = ...
+   Positions are fractions of body height (tuned to the reference picture). */
+
 SHADERS.dress_uniform = generic('dress_uniform', {
   label: 'Dress uniform (ours: piping, cords, gold sweep)',
   vertex: 'world', animated: true,
@@ -996,15 +1001,15 @@ SHADERS.dress_uniform = generic('dress_uniform', {
     veinScale: [2, 80, 0.5], veinSharpness: [0.5, 0.995, 0.005], veinIntensity: [0, 8, 0.1], veinDrift: [0, 1, 0.01], shimmerSpeed: [0, 6, 0.1], snowScale: [5, 120, 1], snowSpeed: [0, 4, 0.05], snowIntensity: [0, 6, 0.1],
   },
   defaults: {
-    woolDark: '#050506', woolLight: '#262932', pipeColor: '#E8EAEE', buttonColor: '#C7CBD3',
+    woolDark: '#050506', woolLight: '#15161B', pipeColor: '#E8EAEE', buttonColor: '#C7CBD3',
     goldColor: '#C9A24A', goldHotColor: '#FFD36B', beltColor: '#0A0A0C', cordColor: '#D9D6CF', rimColor: '#FFC85A', veinColor: '#FFD36B',
     woolScale: 110, weaveFreq: 320, hemY: 0.35, beltY: 0.457, beltWidth: 0.021, collarY: 0.775, shoulderY: 0.745,
     buttonStartY: 0.50, buttonRows: 6, buttonSpacing: 0.042, buttonOffset: 0.036, buttonRadius: 0.012,
     pipeX: 0.068, pipeWidth: 0.0045, buckleWidth: 0.04, frontSign: 1, armInner: 0.16, cuffY: 0.469,
     legStripeX: 0.121, legStripeW: 0.004, capBandY: 0.925, epInner: 0.085, epOuter: 0.255,
     aigX: -0.115, aigY: 0.715, aigR: 0.04,
-    sweepSpeed: 0.18, sweepMode: 1, coolRate: 9, glowIntensity: 3, flashIntensity: 3.5, pipeGlow: 0.6, sheen: 0.35,
-    rimIntensity: 2.2, rimPower: 2.5, specIntensity: 4, specPower: 30, glossSheen: 0.9, sparkle: 4, bodyGlow: 1.1,
+    sweepSpeed: 0.18, sweepMode: 1, coolRate: 9, glowIntensity: 3, flashIntensity: 3.5, pipeGlow: 0.3, sheen: 0.15,
+    rimIntensity: 1.0, rimPower: 3.5, specIntensity: 3, specPower: 30, glossSheen: 0.25, sparkle: 3, bodyGlow: 0.3,
     veinScale: 22, veinSharpness: 0.93, veinIntensity: 3, veinDrift: 0.08, shimmerSpeed: 1.2, snowScale: 35, snowSpeed: 0.8, snowIntensity: 1.5,
   },
   fragCommon: `
@@ -1203,7 +1208,7 @@ vec3 dcV = normalize(cameraPosition - vWorldPos);
 float dcFres = pow(1.0 - max(0.0, dot(dcV, dcN)), rimPower);
 vec3 dcH1 = normalize(dcV + vec3(0.4243, 0.8486, 0.2546));
 vec3 dcH2 = normalize(dcV + vec3(-0.6, 0.3, 0.74));
-float dcSpec = pow(max(0.0, dot(dcN, dcH1)), specPower) + 0.6 * pow(max(0.0, dot(dcN, dcH2)), specPower * 0.6) + 0.35 * pow(max(0.0, dot(dcN, dcH1)), 6.0);
+float dcSpec = pow(max(0.0, dot(dcN, dcH1)), specPower) + 0.6 * pow(max(0.0, dot(dcN, dcH2)), specPower * 0.6);
 float dcMetalM = max(dcGold, dcSilver);
 float dcSpN = dcNoise(vec3(dcX, dcYn, dcZr) * 240.0 + vec3(0.0, time * 2.0, 0.0));
 float dcSpark = smoothstep(0.84, 0.97, dcSpN) * (0.5 + 0.5 * sin(time * 10.0 + dcSpN * 40.0)) * dcMetalM;
