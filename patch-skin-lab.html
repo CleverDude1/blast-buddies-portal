@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skin Lab patcher</title>
+<style>
+body{font:15px/1.5 system-ui,sans-serif;background:#0b0e13;color:#e6e9ef;max-width:560px;margin:40px auto;padding:0 16px}
+label{display:block;background:#1a2130;border:1px dashed #3a475c;border-radius:8px;padding:12px;margin:10px 0}
+button{background:#e8553d;color:#fff;border:0;border-radius:8px;padding:10px 16px;font:inherit;cursor:pointer}
+button:disabled{opacity:.4;cursor:default}
+#msg{margin-top:14px;color:#8b95a7}
+</style>
+</head>
+<body>
+<h2>Skin Lab patcher</h2>
+<p>Adds the <code>dress_uniform</code> shader and the MIDNIGHT PARADE entry to your <code>skin-lab.html</code>. Everything stays in your browser.</p>
+<label>1. Your skin-lab.html <input type="file" id="fHtml" accept=".html"></label>
+<label>2. dress_uniform_shader.js <input type="file" id="fJs" accept=".js"></label>
+<button id="go" disabled>Patch and download</button>
+<div id="msg"></div>
+<script>
+const $ = (i) => document.getElementById(i);
+const check = () => { $('go').disabled = !($('fHtml').files[0] && $('fJs').files[0]); };
+$('fHtml').onchange = check; $('fJs').onchange = check;
+$('go').onclick = async () => {
+  let html = await $('fHtml').files[0].text();
+  let js = await $('fJs').files[0].text();
+  let updated = false;
+  if (html.includes('SHADERS.dress_uniform')) {
+    html = html.replace(/\/\* PASTE THIS INTO skin-lab\.html[\s\S]*?\*\/\s*/, '');
+    html = html.replace(/SHADERS\.dress_uniform = generic\([\s\S]*?\n\}\);\n\s*/, '');
+    updated = true;
+  }
+  js = js.replace(/^\/\*[\s\S]*?\*\/\s*/, '');
+  const marker = /^for \(const k of Object\.keys\(SHADERS\)\) SHADERS\[k\]\.vertexPatch/m;
+  if (!marker.test(html)) { $('msg').textContent = 'Could not find the vertexPatch line. Is this the Skin Lab file?'; return; }
+  html = html.replace(marker, (m) => js.trim() + '\n\n' + m);
+  const entry = '  {"id":60,"seq":100,"rarity":5,"name":"MIDNIGHT PARADE","css":"skin-midnight-parade","shader":{"type":"dress_uniform","maskChannel":"r"}},\n';
+  const own = /(\{"id":58,[^\n]*\n)/;
+  let note = '';
+  if (html.includes('MIDNIGHT PARADE')) note = '';
+  else if (own.test(html)) html = html.replace(own, (m) => m + entry);
+  else note = ' (Could not find NIGHT OFFICER in OUR_SKINS, so MIDNIGHT PARADE was not added to the list. Import the JSON instead.)';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  a.download = 'skin-lab.html';
+  a.click();
+  $('msg').textContent = (updated ? 'Replaced your old dress_uniform shader with the new one. ' : '') + 'Done. The patched skin-lab.html was downloaded. Replace your old file with it.' + note;
+};
+</script>
+</body>
+</html>
