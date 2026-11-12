@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/me.css">
 </head>
 <body data-page="home">
 <template id="page-content">
@@ -15,11 +16,17 @@
   <h1>Blast Buddies statistics, free</h1>
   <p>Rankings, clans, maps and weapons, updated every hour.</p>
   <h2>Who are you in the game?</h2>
-  <input class="search" type="text" placeholder="Your in-game name" aria-label="Your in-game name">
+  <div class="me-find">
+    <input class="search" id="meSearch" type="text" placeholder="Your in-game name" aria-label="Your in-game name"
+           autocomplete="off" role="combobox" aria-controls="meList" aria-expanded="false" aria-autocomplete="list">
+    <ul class="me-list" id="meList" role="listbox" hidden></ul>
+  </div>
   <small>Type your name: this page becomes your dashboard. No account needed, your choice stays in this browser.</small>
 </section>
+<div id="me" aria-live="polite"></div>
 <section class="panel"><h3>Explore</h3><div class="grid" id="explore"></div></section>
 </template>
 <script src="js/layout.js"></script>
+<script src="js/me.js"></script>
 </body>
 </html>
