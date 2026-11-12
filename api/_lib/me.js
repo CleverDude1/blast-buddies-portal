@@ -1,147 +1,188 @@
-// Home page: "Who are you in the game?" -> search by name, remember the player id in this browser, show the dashboard.
-// Data: /api/hourly?mode=me&q=NAME (search) and /api/hourly?mode=me&id=ID (dashboard), see api/_lib/me.js
-(() => {
-  const hero = document.querySelector('.hero'), input = document.getElementById('meSearch'),
-        list = document.getElementById('meList'), root = document.getElementById('me');
-  if (!hero || !input || !list || !root) return;
-  const KEY = 'bbMe', h2 = hero.querySelector('h2'), H2 = h2.textContent, PLACEHOLDER = input.placeholder;
+// Data for the home page dashboard ("Who are you in the game?"). Read-only.
+//   /api/hourly?mode=me&q=NAME  -> up to 10 players whose name contains NAME
+//   /api/hourly?mode=me&id=ID   -> everything the dashboard shows for that player
+// Reads: players, monthly_player_kills, perf_records, and the newest stored snapshot of the daily, weekly and clan boards.
+// Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY
+import { extractList } from './shared.js';
+import { BOARDS as PERF } from './performance.js';
 
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const num = n => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
-  const store = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
-  const saved = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
-  const icon = id => `<img src="images/icons/${id}.png" alt="" onerror="this.onerror=null;this.src='images/placeholder.png'">`;
-  const ago = iso => { const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 6e4)); return m < 2 ? 'just now' : m < 90 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
-  const pctOf = (v, top) => (top > 0 && v != null ? Math.max(0, Math.min(100, v / top * 100)) : 0);
-  const pctText = p => (p > 0 && p < 10 ? p.toFixed(1) : Math.round(p)) + '%';
-  const bar = (p, label) => `<div class="me-bar" role="img" aria-label="${esc(label)}"><i style="--w:${p.toFixed(1)}%"></i></div>`;
-  const card = (ico, title, body, cls = 's2') => `<section class="me-card ${cls}"><h3 class="me-title">${icon(ico)}<span>${title}</span></h3>${body}</section>`;
+const SB = (process.env.SUPABASE_URL || '').replace(/\/+$/, ''), KEY = process.env.SUPABASE_SECRET_KEY;
+const enc = encodeURIComponent;
+const KDR_MIN_KILLS = 1000;   // same cutoff as the Best lifetime KDR board
 
-  // ---------- search ----------
-  let timer, seq = 0, results = [];
-  const close = () => { list.hidden = true; input.setAttribute('aria-expanded', 'false'); };
-  function showList(items, msg) {
-    list.innerHTML = items.length
-      ? items.map(r => `<li><button type="button" data-id="${esc(r.id)}"><span>${esc(r.name)}${r.tag ? `<span class="tag">[${esc(r.tag)}]</span>` : ''}</span>`
-          + `<small>${[r.level != null ? 'Level ' + r.level : '', r.kills != null ? num(r.kills) + ' kills' : ''].filter(Boolean).join(', ')}</small></button></li>`).join('')
-      : `<li class="none">${msg}</li>`;
-    list.hidden = false; input.setAttribute('aria-expanded', 'true');
-  }
-  async function search(q) {
-    const n = ++seq;
-    try {
-      const r = await fetch(`/api/hourly?mode=me&q=${encodeURIComponent(q)}`); if (!r.ok) throw new Error();
-      const d = await r.json(); if (n !== seq) return;
-      results = d.results || [];
-      showList(results, 'No player with that name yet. Players are added once they appear on a leaderboard.');
-    } catch (e) { if (n === seq) { results = []; showList([], 'Search is not available right now. Please try again later.'); } }
-  }
-  input.addEventListener('input', () => {
-    clearTimeout(timer); const v = input.value.trim();
-    if (v.length < 2) { seq++; results = []; close(); return; }
-    timer = setTimeout(() => search(v), 250);
+// count = true also returns the total number of matching rows (only one row is transferred)
+async function q(path, count = false) {
+  const r = await fetch(`${SB}/rest/v1/${path}`, {
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, ...(count ? { Prefer: 'count=exact', Range: '0-0' } : {}) },
   });
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Escape') close();
-    if (e.key === 'Enter' && !list.hidden && results[0]) { e.preventDefault(); pick(results[0].id); }
-  });
-  list.addEventListener('click', e => { const b = e.target.closest('[data-id]'); if (b) pick(b.dataset.id); });
-  document.addEventListener('click', e => { if (!e.target.closest('.me-find')) close(); });
-  const pick = id => { close(); input.value = ''; results = []; load(id); };
+  if (r.status === 416) return { rows: [], total: 0 };
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${(await r.text()).slice(0, 160)}`);
+  const rows = await r.json();
+  const total = count ? Number((r.headers.get('content-range') || '').split('/')[1]) : NaN;
+  return { rows, total: Number.isFinite(total) ? total : null };
+}
 
-  const compact = on => {
-    hero.classList.toggle('compact', on);
-    h2.textContent = on ? 'Switch player' : H2;
-    input.placeholder = on ? 'Search for another player' : PLACEHOLDER;
+// ---------- name search ----------
+export async function meSearch(raw) {
+  const s = String(raw ?? '').replace(/[*,()%\\"'<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 24);
+  if (s.length < 2) return { results: [] };
+  const { rows } = await q(`players?select=player_id,name,clan_tag,level,kills&name=ilike.${enc('*' + s + '*')}&order=kills.desc.nullslast&limit=10`);
+  const exact = s.toLowerCase();
+  const results = rows.map(r => ({ id: r.player_id, name: r.name, tag: r.clan_tag || '', level: r.level ?? null, kills: r.kills == null ? null : Number(r.kills) }))
+    .sort((a, b) => (b.name?.toLowerCase() === exact) - (a.name?.toLowerCase() === exact));
+  return { results };
+}
+
+// ---------- helpers ----------
+// newest stored snapshot of a board ("now" for the whole site; this file never calls the game API)
+async function latest(source) {
+  const { rows: [row] } = await q(`raw_snapshots?select=fetched_at,payload&source=eq.${enc(source)}&order=fetched_at.desc&limit=1`);
+  if (!row) return null;
+  return { at: row.fetched_at, list: extractList(row.payload, source === 'clan' ? 'clanId' : 'playerId') || [] };
+}
+
+function boardInfo(snap, id, metric = 'kills') {
+  if (!snap || !snap.list.length) return null;
+  const L = snap.list, vals = L.map(p => Number(p[metric]) || 0), top = Math.max(...vals), i = L.findIndex(p => p.playerId === id);
+  return { at: snap.at, size: L.length, top, topName: L[vals.indexOf(top)].name, cutoff: Math.min(...vals),
+    on: i >= 0, rank: i >= 0 ? (L[i].rank ?? i + 1) : null, value: i >= 0 ? vals[i] : null };
+}
+
+function clanInfo(list, clanId) {
+  const L = [...list].sort((a, b) => (Number(b.kills) || 0) - (Number(a.kills) || 0));
+  const i = L.findIndex(c => String(c.clanId) === String(clanId));
+  if (i < 0) return null;
+  const c = L[i];
+  return { id: String(c.clanId), name: c.name, tag: c.tag, color: c.color ?? null, kills: Number(c.kills) || 0, rank: i + 1, of: L.length,
+    top: Number(L[0].kills) || 0, topName: L[0].name, members: c.memberCount ?? null, cap: c.memberCap ?? null, openJoin: c.openJoin ?? null };
+}
+
+// "2026-11" (or similar) -> { label: 'November 2026', current: true/false }
+function periodInfo(p) {
+  const m = /(\d{4})\D*(\d{1,2})/.exec(String(p)), now = new Date();
+  if (!m) return { label: String(p), current: false };
+  const y = +m[1], mo = +m[2];
+  return { label: new Date(Date.UTC(y, mo - 1, 1)).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+    current: y === now.getUTCFullYear() && mo === now.getUTCMonth() + 1 };
+}
+
+// members of the clan with their kills in the newest month stored for that clan (top 20 clans only)
+async function clanMembers(cid, myId) {
+  const last = (await q(`monthly_player_kills?select=period&clan_id=eq.${enc(cid)}&order=period.desc&limit=1`)).rows[0];
+  if (!last) return null;
+  const { rows } = await q(`monthly_player_kills?select=player_id,name,kills,is_leader&clan_id=eq.${enc(cid)}&period=eq.${enc(last.period)}&order=kills.desc&limit=60`);
+  const i = rows.findIndex(r => r.player_id === myId), per = periodInfo(last.period);
+  return { label: per.label, current: per.current, count: rows.length, place: i >= 0 ? i + 1 : null,
+    leader: rows.find(r => r.is_leader)?.name || null,
+    top: rows.slice(0, 5).map(r => ({ id: r.player_id, name: r.name, kills: Number(r.kills) })),
+    me: i >= 5 ? { name: rows[i].name, kills: Number(rows[i].kills) } : null };
+}
+
+// ---------- Player Performance ranks ----------
+// The six record boards live in perf_records (one row per player/clan = personal best).
+async function recordRank(board, entityId, title) {
+  const meta = PERF[board];
+  const [mine, top] = await Promise.all([
+    q(`perf_records?select=value,achieved_at&board=eq.${board}&entity_id=eq.${enc(entityId)}&limit=1`),
+    q(`perf_records?select=name,value&board=eq.${board}&order=value.desc&limit=1`, true),
+  ]);
+  const t = top.rows[0];
+  if (!t) return null;
+  const out = { id: board, title: title || meta.title, unit: meta.unit, total: top.total, top: Number(t.value), topName: t.name, value: null };
+  const m = mine.rows[0];
+  if (m) {
+    const g = await q(`perf_records?select=entity_id&board=eq.${board}&value=gt.${m.value}`, true);
+    out.value = Number(m.value); out.rank = (g.total ?? 0) + 1;
+  }
+  return out;
+}
+
+async function kdrRank(p) {
+  const base = `players?kdr=not.is.null&kills=gte.${KDR_MIN_KILLS}`;
+  const top = await q(`${base}&select=name,kdr&order=kdr.desc&limit=1`, true), t = top.rows[0];
+  if (!t) return null;
+  const out = { id: 'lifetime_kdr', title: PERF.lifetime_kdr.title, unit: PERF.lifetime_kdr.unit, total: top.total, top: Number(t.kdr), topName: t.name, value: null };
+  if (p.kdr != null && Number(p.kills) >= KDR_MIN_KILLS) {
+    const g = await q(`${base}&select=player_id&kdr=gt.${p.kdr}`, true);
+    out.value = Number(p.kdr); out.rank = (g.total ?? 0) + 1;
+  }
+  return out;
+}
+
+// best month per player (same rule as the Player Performance page); the rank counts different players with a bigger best month
+async function monthRank(id) {
+  const [mine, top] = await Promise.all([
+    q(`monthly_player_kills?select=period,kills&player_id=eq.${enc(id)}&order=kills.desc&limit=1`),
+    q(`monthly_player_kills?select=name,kills&order=kills.desc&limit=1`),
+  ]);
+  const t = top.rows[0];
+  if (!t) return null;
+  const out = { id: 'month_kills', title: PERF.month_kills.title, unit: PERF.month_kills.unit, total: null, top: Number(t.kills), topName: t.name, value: null };
+  const m = mine.rows[0];
+  if (m) {
+    const g = await q(`monthly_player_kills?select=player_id&kills=gt.${m.kills}&limit=1000`);
+    out.value = Number(m.kills); out.rank = new Set(g.rows.map(r => r.player_id)).size + 1; out.rankApprox = g.rows.length >= 1000;
+  }
+  return out;
+}
+
+async function performance(p, cid) {
+  const id = String(p.player_id);
+  const jobs = Object.keys(PERF).map(b =>
+    b === 'lifetime_kdr' ? kdrRank(p)
+    : b === 'month_kills' ? monthRank(id)
+    : b === 'gain_clan' ? (cid ? recordRank(b, cid, 'Your clan: biggest 1-hour gain') : null)
+    : recordRank(b, id));
+  return (await Promise.allSettled(jobs)).map(r => (r.status === 'fulfilled' ? r.value : null)).filter(Boolean);
+}
+
+// ---------- the dashboard ----------
+export async function meRead(rawId) {
+  const id = String(rawId || '');
+  if (!/^[\w-]{3,40}$/.test(id)) return { found: false };
+  const p = (await q(`players?select=*&player_id=eq.${enc(id)}`)).rows[0];
+  if (!p) return { found: false };
+
+  const errors = {};
+  const safe = async (name, fn) => {
+    try { return await fn(); } catch (e) { errors[name] = e.message; console.error(`me ${name} failed:`, e.message); return null; }
   };
+  const wantClan = !!(p.clan_id || p.clan_tag);
+  const [day, week, clanBoard, own] = await Promise.all([
+    safe('day', () => latest('leaderboard-day')),
+    safe('week', () => latest('leaderboard-week')),
+    wantClan ? safe('clanBoard', () => latest('clan')) : null,
+    safe('months', () => q(`monthly_player_kills?select=period,kills&player_id=eq.${enc(id)}&order=period.desc&limit=12`)),
+  ]);
 
-  // ---------- cards ----------
-  function boardCard(ico, title, b, note) {
-    if (!b) return card(ico, title, '<p class="me-note">No snapshot stored yet.</p>');
-    const p = pctOf(b.value, b.top), lead = `<p class="me-foot">Leader: <b>${esc(b.topName)}</b> with ${num(b.top)} kills</p>`;
-    return card(ico, title, (b.on
-      ? `<div class="me-big">${num(b.value)}</div><p class="me-sub">Rank #${b.rank} of the top ${b.size}</p>${bar(p, `${pctText(p)} of the leader's kills`)}<p class="me-pct">${pctText(p)} of the leader's kills</p>`
-      : `<div class="me-big dim">Not listed</div><p class="me-sub">You are outside the top ${b.size} right now.</p>${bar(0, 'Not on the board')}<p class="me-pct">Place ${b.size} has ${num(b.cutoff)} kills</p>`)
-      + lead + `<p class="me-upd">${note} Updated ${ago(b.at)}</p>`);
-  }
-
-  function spark(vals) {
-    if (vals.length < 2) return '';
-    const W = 300, H = 56, max = Math.max(...vals), min = Math.min(...vals), span = (max - min) || 1;
-    const line = vals.map((v, i) => `${i ? 'L' : 'M'}${(i / (vals.length - 1) * W).toFixed(1)} ${(H - 4 - (v - min) / span * (H - 12)).toFixed(1)}`).join('');
-    return `<svg class="me-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path class="area" d="${line}L${W} ${H}L0 ${H}Z"/><path class="line" d="${line}"/></svg>`;
-  }
-
-  function monthCard(d) {
-    const ms = d.months || [];
-    if (!ms.length) return card('statistics', 'Kills this month', '<p class="me-note">No monthly kills stored for you. They are tracked for players in the top 20 clans.</p>');
-    const cur = ms[ms.length - 1], prev = ms[ms.length - 2];
-    let sub = cur.current ? `${esc(cur.label)} so far` : `Latest month tracked: ${esc(cur.label)}`;
-    if (prev) {
-      if (cur.current) sub += `<br>${esc(prev.label)}: ${num(prev.kills)}`;
-      else { const diff = cur.kills - prev.kills, pc = prev.kills ? Math.abs(diff / prev.kills * 100).toFixed(1) + '%' : '';
-        sub += `<br><span class="${diff >= 0 ? 'up' : 'down'}">${diff >= 0 ? '▲' : '▼'} ${num(Math.abs(diff))}${pc ? ` (${pc})` : ''}</span> vs ${esc(prev.label)}`; }
+  // the player's clan: by clan_id, else by tag when the tag is unique on the clan board, else the stored clans row
+  let cid = p.clan_id ? String(p.clan_id) : null, clan = null;
+  if (clanBoard) {
+    clan = cid ? clanInfo(clanBoard.list, cid) : null;
+    if (!clan && p.clan_tag) {
+      const same = clanBoard.list.filter(c => c.tag === p.clan_tag);
+      if (same.length === 1) { cid = String(same[0].clanId); clan = clanInfo(clanBoard.list, cid); }
     }
-    return card('statistics', 'Kills this month',
-      `<div class="me-big">${num(cur.kills)}</div><p class="me-sub">${sub}</p>${spark(ms.map(m => m.kills))}`
-      + (cur.current ? '' : '<p class="me-upd">This month has not been recorded yet.</p>'));
+  }
+  if (!clan && cid) {
+    clan = await safe('clanRow', async () => {
+      const r = (await q(`clans?select=name,tag,color,member_count,member_cap,kills&clan_id=eq.${enc(cid)}`)).rows[0];
+      return r && { id: cid, name: r.name, tag: r.tag, color: r.color, kills: Number(r.kills) || 0, rank: null, of: null, top: null, topName: null,
+        members: r.member_count, cap: r.member_cap, stale: true };
+    });
   }
 
-  function clanCard(d) {
-    const c = d.clan, m = d.members, p = d.player;
-    if (!c) return card('league', 'My clan', p.tag
-      ? `<div class="me-clan-name"><span class="tag">[${esc(p.tag)}]</span></div><p class="me-note">This clan is not on the stored clan list yet, so its score is not available.</p>`
-      : '<p class="me-note">You are not in a clan right now.</p>', 's3');
-    const pc = pctOf(c.kills, c.top);
-    const rows = `<div class="me-row"><span>Clan score</span><div class="me-val">${num(c.kills)}`
-        + `<small>${c.rank ? `kills this month, #${c.rank} of ${c.of} clans` : 'kills, last seen (not on the clan list now)'}</small>`
-        + (c.top ? bar(pc, `${pctText(pc)} of the top clan`) + `<small>${pctText(pc)} of ${esc(c.topName)}</small>` : '') + `</div></div>`
-      + (c.members != null ? `<div class="me-row"><span>Members</span><div class="me-val">${c.members}${c.cap ? ' / ' + c.cap : ''}</div></div>` : '')
-      + (m?.leader ? `<div class="me-row"><span>Leader</span><div class="me-val">${esc(m.leader)}</div></div>` : '')
-      + (m?.place ? `<div class="me-row"><span>My place</span><div class="me-val">#${m.place}<small>of ${m.count} in ${esc(m.label)}</small></div></div>` : '');
-    const line = (r, i) => `<div class="${r.id === p.id ? 'you' : ''}"><span class="n">${i}</span><span class="who">${esc(r.name)}</span><span class="k">${num(r.kills)}</span></div>`;
-    const top = m
-      ? `<h4 class="me-top-title">${m.current ? 'Biggest kills this month' : 'Biggest kills in ' + esc(m.label)}</h4><div class="me-top">${m.top.map((r, i) => line(r, i + 1)).join('')}`
-        + (m.me ? `<div class="gap">…</div>${line({ ...m.me, id: p.id }, m.place)}` : '') + `</div>`
-        + (m.current ? '' : '<p class="me-upd">This month has not been recorded yet.</p>')
-      : '<p class="me-note" style="margin-top:14px">Monthly kills are only tracked for the top 20 clans, so there is no member list for this clan.</p>';
-    return card('league', 'My clan', `<div class="me-clan-name"><span class="tag">[${esc(c.tag || p.tag)}]</span> ${esc(c.name)}</div><div style="margin-top:12px">${rows}</div>${top}`, 's3');
-  }
+  const [members, perf] = await Promise.all([
+    cid ? safe('members', () => clanMembers(cid, id)) : null,
+    safe('performance', () => performance(p, cid)),
+  ]);
 
-  function perfCard(list) {
-    if (!list || !list.length) return card('performance', 'Player Performance', '<p class="me-note">No performance records stored yet.</p>', 's3');
-    return card('performance', 'Player Performance', list.map(r => {
-      const has = r.value != null, p = pctOf(r.value, r.top), plus = r.id.startsWith('gain_') ? '+' : '';
-      const rank = has ? `<b>#${r.rank}${r.rankApprox ? '+' : ''}</b>${r.total ? ` of ${num(r.total)}` : ''}` : 'No record yet';
-      return `<div class="me-perf"><div class="top"><span class="name">${esc(r.title)}</span>`
-        + `<span class="val">${has ? plus + num(r.value) + ` <small>${esc(r.unit)}</small>` : '–'}</span></div>`
-        + bar(p, has ? `${pctText(p)} of the best` : 'No record yet')
-        + `<div class="meta"><span>${rank}</span><span>Best: ${esc(r.topName || '')} ${plus}${num(r.top)}</span></div></div>`;
-    }).join(''), 's3');
-  }
-
-  function render(d) {
-    const p = d.player;
-    const chips = [['Level', p.level], ['Lifetime kills', p.kills], ['KDR', p.kdr], ['Games played', p.games]]
-      .filter(([, v]) => v != null).map(([l, v]) => `<li><small>${l}</small><b>${num(v)}</b></li>`).join('');
-    root.innerHTML = `<div class="me-head"><div><h2 class="me-name">${p.tag ? `<span class="tag">[${esc(p.tag)}]</span> ` : ''}${esc(p.name)}</h2>`
-      + `<ul class="me-chips">${chips}</ul></div><button class="pill" id="meChange" type="button">Not you?</button></div>`
-      + `<div class="me-grid">${monthCard(d)}${boardCard('daily', "Today's kills", d.today, 'Counts since 00:00 UTC.')}`
-      + `${boardCard('podium', 'Weekly kills', d.week, 'Resets every week.')}${clanCard(d)}${perfCard(d.performance)}</div>`;
-    document.getElementById('meChange').onclick = () => { store(KEY, null); root.innerHTML = ''; compact(false); input.focus(); };
-  }
-
-  async function load(id) {
-    store(KEY, id); compact(true);
-    root.innerHTML = '<p class="me-note me-load">Loading your dashboard…</p>';
-    try {
-      const r = await fetch(`/api/hourly?mode=me&id=${encodeURIComponent(id)}`); if (!r.ok) throw new Error();
-      const d = await r.json();
-      if (!d.found) { store(KEY, null); compact(false); root.innerHTML = '<p class="me-note">That player is no longer in the data. Search for your name again.</p>'; return; }
-      render(d);
-    } catch (e) { root.innerHTML = '<p class="me-note">Could not load your stats. Please try again later.</p>'; }
-  }
-
-  const id = saved(KEY);
-  if (id) load(id);
-})();
+  const months = (own?.rows || []).map(r => ({ ...periodInfo(r.period), kills: Number(r.kills) })).reverse();   // oldest first
+  return {
+    found: true, generatedAt: new Date().toISOString(),
+    player: { id, name: p.name, tag: p.clan_tag || '', level: p.level ?? null, kills: p.kills == null ? null : Number(p.kills),
+      deaths: p.deaths == null ? null : Number(p.deaths), kdr: p.kdr == null ? null : Number(p.kdr), games: p.games == null ? null : Number(p.games) },
+    today: boardInfo(day, id), week: boardInfo(week, id),
+    months, clan, members, performance: perf || [], errors,
+  };
+}
