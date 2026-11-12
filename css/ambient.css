@@ -82,6 +82,32 @@ html { background: #0b0805; }
   to   { transform: scale(1.004, 1.013); }
 }
 
+/* ---------- Swinging chandelier ---------- */
+.swing { position: absolute; inset: 0; will-change: transform; }
+.swing-img {
+  position: absolute;
+  inset: 0;
+  background: url('../images/war-room.png') center / 100% 100% no-repeat;
+}
+
+/* ---------- Home hero: no box, text sits on the artwork, on the left ---------- */
+.panel.hero, .hero {
+  background: none !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  text-align: left !important;
+  margin-left: 0 !important;
+  margin-right: auto !important;
+  max-width: 540px;
+  align-items: flex-start !important;
+}
+.hero h1, .hero h2, .hero p, .hero small {
+  text-align: left !important;
+  text-shadow: 0 2px 10px rgba(0,0,0,.9), 0 0 3px rgba(0,0,0,.8);
+}
+.hero .me-find { margin-left: 0 !important; margin-right: auto !important; }
+
 #ambientParticles {
   position: absolute;
   inset: 0;
@@ -91,4 +117,5 @@ html { background: #0b0805; }
 
 @media (prefers-reduced-motion: reduce) {
   .breather, .moonlight { animation: none; }
+  .swing { transform: none !important; }
 }
