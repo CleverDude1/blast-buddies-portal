@@ -7,7 +7,7 @@ body { background: #0b0805; }
 .ambient {
   position: fixed;
   inset: 0;
-  z-index: 0;
+  z-index: -1;
   overflow: hidden;
   pointer-events: none;
 }
@@ -32,8 +32,8 @@ body { background: #0b0805; }
     rgba(8,5,3,.28);
 }
 
-/* Keep the real site above the background */
-.sidebar, .main { position: relative; z-index: 1; }
+body, .main, .content { background: transparent !important; }
+html { background: #0b0805; }
 
 /* ---------- Candle and fire glows (intensity is driven from ambient.js) ---------- */
 .glow {
