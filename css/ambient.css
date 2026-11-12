@@ -1,0 +1,94 @@
+/* War Room ambient background. Loaded AFTER style.css so it can override the old green background.
+   Everything inside .ambient-stage is positioned in % of the image, so it stays glued to the artwork at any screen size. */
+
+body { background: #0b0805; }
+.main, .content { background: transparent; }   /* if the green is set on another element, make that one transparent too */
+
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* The stage is the image, sized like background-size: cover and centred */
+.ambient-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100vw, calc(100vh * 1672 / 941));
+  aspect-ratio: 1672 / 941;
+  transform: translate(-50%, -50%);
+  background: url('../images/war-room.png') center / 100% 100% no-repeat;
+}
+
+/* Dark veil + vignette so the panels and text stay readable on top of the artwork */
+.ambient-veil {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at center, rgba(8,5,3,.15) 0%, rgba(8,5,3,.55) 100%),
+    rgba(8,5,3,.28);
+}
+
+/* Keep the real site above the background */
+.sidebar, .main { position: relative; z-index: 1; }
+
+/* ---------- Candle and fire glows (intensity is driven from ambient.js) ---------- */
+.glow {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  mix-blend-mode: screen;
+  will-change: opacity, transform;
+  background: radial-gradient(circle,
+    rgba(255,190,90,.85) 0%,
+    rgba(255,150,50,.38) 28%,
+    rgba(255,110,30,.12) 55%,
+    rgba(255,90,20,0) 72%);
+}
+.glow.fire {
+  background: radial-gradient(circle,
+    rgba(255,170,70,.75) 0%,
+    rgba(255,110,30,.35) 30%,
+    rgba(255,70,10,.12) 58%,
+    rgba(255,60,10,0) 74%);
+}
+
+/* Cool moonlight spilling from the window */
+.moonlight {
+  position: absolute;
+  left: 3%; top: 13%;
+  width: 22%; height: 58%;
+  mix-blend-mode: screen;
+  background: linear-gradient(115deg, rgba(120,160,255,.20), rgba(120,160,255,0) 80%);
+  clip-path: polygon(0 0, 55% 0, 100% 100%, 20% 100%);
+  animation: moon-pulse 9s ease-in-out infinite alternate;
+}
+@keyframes moon-pulse { from { opacity: .55; } to { opacity: 1; } }
+
+/* ---------- Breathing characters ----------
+   Each one is a copy of the artwork clipped to the character's outline, scaled a hair from its feet. */
+.breather {
+  position: absolute;
+  inset: 0;
+  background: url('../images/war-room.png') center / 100% 100% no-repeat;
+  animation: breathe var(--dur, 4.6s) ease-in-out var(--delay, 0s) infinite alternate;
+  will-change: transform;
+}
+@keyframes breathe {
+  from { transform: scale(1, 1); }
+  to   { transform: scale(1.004, 1.013); }
+}
+
+#ambientParticles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breather, .moonlight { animation: none; }
+}
