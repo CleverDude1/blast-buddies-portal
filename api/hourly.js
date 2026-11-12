@@ -35,7 +35,7 @@ import { clanUpdates } from './_lib/clan-updates.js';
 import { playerUpdates } from './_lib/player-updates.js';
 import voteHandler from './_lib/vote.js';
 import { performanceRead, performanceBackfill } from './_lib/performance.js';
-
+import { meSearch, meRead } from './_lib/me.js';   // next to the other imports
 // a week or month summary reads a lot of snapshots; give Vercel more time (remove if your plan does not allow it)
 export const config = { maxDuration: 60 };
 
