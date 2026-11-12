@@ -4,6 +4,8 @@
 //   /api/hourly?mode=clan-updates&kind=all|left|joined|renamed|access|color&q=&offset=   -> Clan Updates feed
 //   /api/hourly?mode=vote                                             -> Community Vote (GET = status/results, POST = submit ballot)
 //   /api/hourly?mode=performance                                      -> Player Performance records (all boards)
+//   /api/hourly?mode=me&q=NAME                                        -> home page: players whose name contains NAME ("Who are you in the game?")
+//   /api/hourly?mode=me&id=PLAYER_ID                                  -> home page: the dashboard for that player
 //   /api/hourly?mode=perf-backfill&after=0                            -> (needs Authorization: Bearer <YOUR_ACTUAL_CRON_SECRET>) rebuild Player Performance records
 //                                                                        from stored snapshots; repeat with after=<next> until done:true
 //
@@ -35,7 +37,8 @@ import { clanUpdates } from './_lib/clan-updates.js';
 import { playerUpdates } from './_lib/player-updates.js';
 import voteHandler from './_lib/vote.js';
 import { performanceRead, performanceBackfill } from './_lib/performance.js';
-import { meSearch, meRead } from './_lib/me.js';   // next to the other imports
+import { meSearch, meRead } from './_lib/me.js';
+
 // a week or month summary reads a lot of snapshots; give Vercel more time (remove if your plan does not allow it)
 export const config = { maxDuration: 60 };
 
@@ -273,6 +276,8 @@ export default async function handler(req, res) {
       data = await playerUpdates(req.query);
     } else if (mode === 'performance') {
       data = await performanceRead();
+    } else if (mode === 'me') {
+      data = req.query.id ? await meRead(req.query.id) : await meSearch(req.query.q);
     } else return res.status(400).json({ error: 'unknown mode' });
     res.setHeader('Cache-Control', pastDay ? 'public, s-maxage=3600, stale-while-revalidate=86400'
       : span === 'week' || span === 'month' ? 'public, s-maxage=900, stale-while-revalidate=1800'
