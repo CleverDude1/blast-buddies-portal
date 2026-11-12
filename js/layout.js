@@ -134,3 +134,5 @@ if (grid) grid.innerHTML = NAV.filter(n => n[0] !== 'home' && n[0] !== '#')
   window.addEventListener('hr-span', () => { span = getSpan(); load(); });
   load();
 })();
+document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="css/ambient.css">');
+document.body.append(Object.assign(document.createElement('script'), { src: 'js/ambient.js' }));
