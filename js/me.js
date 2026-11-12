@@ -30,11 +30,12 @@
   async function search(q) {
     const n = ++seq;
     try {
-      const r = await fetch(`/api/hourly?mode=me&q=${encodeURIComponent(q)}`); if (!r.ok) throw new Error();
+      const r = await fetch(`/api/hourly?mode=me&q=${encodeURIComponent(q)}`);
+      if (!r.ok) { console.error('me search failed:', r.status, await r.text().catch(() => '')); const err = new Error('http'); err.status = r.status; throw err; }
       const d = await r.json(); if (n !== seq) return;
       results = d.results || [];
       showList(results, 'No player with that name yet. Players are added once they appear on a leaderboard.');
-    } catch (e) { if (n === seq) { results = []; showList([], 'Search is not available right now. Please try again later.'); } }
+    } catch (e) { if (n === seq) { results = []; showList([], `Search is not available right now${e.status ? ` (error ${e.status})` : ''}. Please try again later.`); } }
   }
   input.addEventListener('input', () => {
     clearTimeout(timer); const v = input.value.trim();
@@ -135,11 +136,12 @@
     store(KEY, id); compact(true);
     root.innerHTML = '<p class="me-note me-load">Loading your dashboard…</p>';
     try {
-      const r = await fetch(`/api/hourly?mode=me&id=${encodeURIComponent(id)}`); if (!r.ok) throw new Error();
+      const r = await fetch(`/api/hourly?mode=me&id=${encodeURIComponent(id)}`);
+      if (!r.ok) { console.error('me load failed:', r.status, await r.text().catch(() => '')); const err = new Error('http'); err.status = r.status; throw err; }
       const d = await r.json();
       if (!d.found) { store(KEY, null); compact(false); root.innerHTML = '<p class="me-note">That player is no longer in the data. Search for your name again.</p>'; return; }
       render(d);
-    } catch (e) { root.innerHTML = '<p class="me-note">Could not load your stats. Please try again later.</p>'; }
+    } catch (e) { root.innerHTML = `<p class="me-note">Could not load your stats${e.status ? ` (error ${e.status})` : ''}. Please try again later.</p>`; }
   }
 
   const id = saved(KEY);
