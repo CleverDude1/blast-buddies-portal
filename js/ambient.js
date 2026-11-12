@@ -7,9 +7,9 @@
   // ---------- Tweak everything here ----------
   const LIGHTS = [
     // chandelier candles
-    { x: 141, y: 150, size: 6,  flame: true }, { x: 193, y: 183, size: 5,  flame: true },
-    { x: 237, y: 148, size: 6,  flame: true }, { x: 337, y: 158, size: 5,  flame: true },
-    { x: 409, y: 145, size: 6.5, flame: true }, { x: 436, y: 190, size: 5,  flame: true },
+    { x: 141, y: 150, size: 6,  flame: true, swing: true }, { x: 193, y: 183, size: 5,  flame: true, swing: true },
+    { x: 237, y: 148, size: 6,  flame: true, swing: true }, { x: 337, y: 158, size: 5,  flame: true, swing: true },
+    { x: 409, y: 145, size: 6.5, flame: true, swing: true }, { x: 436, y: 190, size: 5,  flame: true, swing: true },
     // table candle
     { x: 703, y: 575, size: 9,  flame: true },
     // fireplace candles
@@ -30,9 +30,17 @@
       pts: [[1195,478],[1245,470],[1300,490],[1325,530],[1320,580],[1370,640],[1385,700],[1345,740],[1345,830],[1330,905],[1250,915],[1150,905],[1145,820],[1125,690],[1140,640],[1155,560],[1165,510]] }
   ];
 
+  // Chandelier: hangs from the pivot (top of the chain) and swings slowly. The outline covers chain, ring and candles.
+  const CHANDELIER = {
+    pivot: [285, 0],
+    swingDeg: 0.55,      // how far it swings each way (degrees), keep it small
+    period: 7.5,         // seconds for one full swing
+    pts: [[272,0],[305,0],[308,125],[455,125],[460,285],[120,285],[118,125],[268,125]]
+  };
+
   const WINDOW = { x0: 62, x1: 195, y0: 135, y1: 535 };   // where light motes appear
   const CANDLE_PARTICLE_RATE = 0.35;   // per candle, particles per second (very low)
-  const WINDOW_PARTICLE_RATE = 1.6;    // whole window, particles per second
+  const WINDOW_PARTICLE_RATE = 6;      // whole window, particles per second (was 1.6)
   // -------------------------------------------
 
   const pc = (v, total) => (v / total * 100).toFixed(3) + '%';
@@ -55,6 +63,16 @@
     el.style.setProperty('--delay', c.delay + 's');
     stage.append(el);
   });
+
+  // swinging chandelier: a clipped copy of the artwork plus its candle glows, all rotated together
+  const swing = document.createElement('div');
+  swing.className = 'swing';
+  swing.style.transformOrigin = pc(CHANDELIER.pivot[0], W) + ' ' + pc(CHANDELIER.pivot[1], H);
+  const swingImg = document.createElement('div');
+  swingImg.className = 'swing-img';
+  swingImg.style.clipPath = 'polygon(' + CHANDELIER.pts.map(p => pc(p[0], W) + ' ' + pc(p[1], H)).join(',') + ')';
+  swing.append(swingImg);
+  stage.append(swing);
 
   stage.insertAdjacentHTML('beforeend', '<div class="moonlight"></div>');
 
@@ -106,9 +124,16 @@
   const rnd = (a, b) => a + Math.random() * (b - a);
   const flames = LIGHTS.filter(l => l.flame);
 
+  let swingAngle = 0;   // degrees, updated every frame
+  function swung(x, y, deg) {
+    const [px, py] = CHANDELIER.pivot, r = deg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+    return [px + (x - px) * c - (y - py) * s, py + (x - px) * s + (y - py) * c];
+  }
+
   function spawnCandle() {
     const f = flames[(Math.random() * flames.length) | 0];
-    parts.push({ kind: 'ember', x: f.x + rnd(-3, 3), y: f.y - 8, vx: rnd(-1.5, 1.5), vy: -rnd(4, 9),
+    const [fx, fy] = f.swing ? swung(f.x, f.y, swingAngle) : [f.x, f.y];
+    parts.push({ kind: 'ember', x: fx + rnd(-3, 3), y: fy - 8, vx: rnd(-1.5, 1.5), vy: -rnd(4, 9),
                  r: rnd(0.45, 0.9), life: 0, max: rnd(7, 13), a: rnd(0.2, 0.4), ph: Math.random() * 6.28 });
   }
   function spawnWindow() {
@@ -147,7 +172,16 @@
     const dt = Math.min(0.1, (t - last) / 1000); last = t;
     const now = t / 1000;
     const draught = 0.04 * Math.sin(now * 0.9) + 0.03 * Math.sin(now * 2.3 + 1);
+    // slow pendulum: main swing plus a smaller, offset second wave so it never looks mechanical
+    const w = 2 * Math.PI / CHANDELIER.period;
+    swingAngle = CHANDELIER.swingDeg * (Math.sin(now * w) + 0.3 * Math.sin(now * w * 1.7 + 1.3)) / 1.3;
+    swing.style.transform = `rotate(${swingAngle.toFixed(4)}deg)`;
     for (const l of lights) {
+      if (l.swing) {
+        const [sx, sy] = swung(l.x, l.y, swingAngle);
+        l.el.style.left = pc(sx, W);
+        l.el.style.top = pc(sy, H);
+      }
       const v = flicker(l, dt, now, draught);
       l.el.style.opacity = Math.min(1, v).toFixed(3);
       l.el.style.transform = `translate(-50%,-50%) scale(${(0.92 + 0.1 * v).toFixed(3)})`;
