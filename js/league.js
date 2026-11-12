@@ -47,3 +47,5 @@ async function load() {
 }
 tick(); setInterval(tick, 1000);
 load(); setInterval(load, 300000);
+document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="css/ambient.css">');
+document.body.append(Object.assign(document.createElement('script'), { src: 'js/ambient.js' }));
