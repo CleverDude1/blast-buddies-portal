@@ -51,6 +51,7 @@ document.body.insertAdjacentHTML('afterbegin', `
   <header class="topbar">
     <button class="toggle" id="toggle" aria-label="Toggle menu">✕</button>
     <div class="spacer"></div>
+    <div class="api-status" id="apiStatus"></div>
     <a class="pill" href="${CONFIG.discordInvite}" target="_blank" rel="noopener">${icon('discord')}Discord</a>
     <a class="pill hide-sm" href="about.html">${icon('about')}About</a>
     <a class="pill hide-sm" href="api.html">${icon('api')}API</a>
@@ -137,3 +138,6 @@ if (grid) grid.innerHTML = NAV.filter(n => n[0] !== 'home' && n[0] !== '#')
 })();
 document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="css/ambient.css">');
 document.body.append(Object.assign(document.createElement('script'), { src: 'js/ambient.js' }));
+// API status buttons in the top bar (New API / Old API)
+document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="css/status.css">');
+document.body.append(Object.assign(document.createElement('script'), { src: 'js/status.js' }));
