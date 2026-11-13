@@ -29,6 +29,7 @@ const NAV = [
   ['statistics','Statistics','statistics.html'],
   ['activity','Player Activity','player-activity.html'],
   ['performance','Player Performance','performance.html']
+  ['clan-performance','Clan Performance','clan-performance.html'],
 ];
 const page = document.body.dataset.page;
 const icon = id => `<img src="images/icons/${id}.png" alt="" onerror="this.onerror=null;this.src='images/placeholder.png'">`;
