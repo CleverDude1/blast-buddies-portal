@@ -29,9 +29,11 @@ const colorOf = r => r.color ?? r.clan_color ?? null;
 
 // raw payload -> clans ranked by kills (same as the Rankings page)
 function rowsOf(payload) {
-  const list = extractList(payload, 'clanId');
-  if (!list) return null;
-  return list.map(normClan).sort((a, b) => (b.kills ?? -1) - (a.kills ?? -1)).map((r, i) => ({ ...r, rank: i + 1 }));
+  try {
+    const list = extractList(payload, 'clanId');
+    if (!Array.isArray(list) || !list.length) return null;
+    return list.map(normClan).sort((a, b) => (b.kills ?? -1) - (a.kills ?? -1)).map((r, i) => ({ ...r, rank: i + 1 }));
+  } catch (e) { return null; }          // an empty / error payload (e.g. while the API was down) is skipped, not fatal
 }
 
 async function pool(items, n, fn) {   // run fn over items, at most n at a time
@@ -44,8 +46,13 @@ async function pool(items, n, fn) {   // run fn over items, at most n at a time
 }
 
 async function newest() {
-  const [row] = await rest(`raw_snapshots?select=fetched_at,payload&${SRC}&order=fetched_at.desc&limit=1`);
-  return row ? { at: Date.parse(row.fetched_at), rows: rowsOf(row.payload) } : null;
+  // the newest snapshot that actually holds clans (if the API was down, the latest stored ones may be empty)
+  const recent = await rest(`raw_snapshots?select=fetched_at,payload&${SRC}&order=fetched_at.desc&limit=6`);
+  for (const row of recent) {
+    const rows = rowsOf(row.payload);
+    if (rows) return { at: Date.parse(row.fetched_at), rows };
+  }
+  return null;
 }
 async function aboutAnHourBefore(refAt) {
   const lo = iso(refAt - 150 * MIN), hi = iso(refAt - 30 * MIN);
@@ -88,11 +95,19 @@ async function overview(cur) {
   };
 }
 
+let stage = 'start';
 export async function clanPerformance(query) {
+  stage = 'start';
+  try { return await run(query); }
+  catch (e) { throw new Error(`clan-perf failed at step "${stage}": ${e.message}`); }   // shows up in the 500 response and in the Vercel logs
+}
+
+async function run(query) {
+  stage = 'reading the newest clan snapshot';
   const cur = await newest();
   if (!cur || !cur.rows || !cur.rows.length) return { ok: false, error: 'no clan data stored yet' };
   const id = String(query.id || '').trim();
-  if (!id) return overview(cur);
+  if (!id) { stage = 'building the overview'; return overview(cur); }
 
   const me = cur.rows.find(r => String(r.clan_id) === id);
   if (!me) return { ok: true, mode: 'clan', found: false, id, at: iso(cur.at) };
@@ -101,13 +116,16 @@ export async function clanPerformance(query) {
   const hourlyFrom = today - (HOURLY_DAYS - 1) * DAY, histFrom = today - (HISTORY_DAYS - 1) * DAY;
 
   // 1) every snapshot of the recent days
+  stage = 'listing recent snapshots';
   const metas = await rest(`raw_snapshots?select=id,fetched_at&${SRC}&fetched_at=gte.${enc(iso(hourlyFrom))}&order=fetched_at.asc&limit=2000`);
   const atOf = new Map(metas.map(m => [m.id, Date.parse(m.fetched_at)]));
   const chunks = [];
   for (let i = 0; i < metas.length; i += CHUNK) chunks.push(metas.slice(i, i + CHUNK).map(m => m.id));
+  stage = 'loading recent snapshots';
   const fineRows = (await pool(chunks, 6, c => rest(`raw_snapshots?select=id,payload&id=in.(${c.join(',')})`))).flat();
 
   // 2) the last snapshot of each older day
+  stage = 'loading older days';
   const olderDays = [];
   for (let t = histFrom; t < hourlyFrom; t += DAY) olderDays.push(t);
   const olderRows = (await pool(olderDays, 6, async t => {
