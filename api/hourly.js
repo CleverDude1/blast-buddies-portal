@@ -39,7 +39,6 @@ import { clanUpdates } from './_lib/clan-updates.js';
 import { playerUpdates } from './_lib/player-updates.js';
 import voteHandler from './_lib/vote.js';
 import { performanceRead, performanceBackfill } from './_lib/performance.js';
-import { clanPerformance } from './_lib/clan-performance.js';
 import { meSearch, meRead } from './_lib/me.js';
 
 // a week or month summary reads a lot of snapshots; give Vercel more time (remove if your plan does not allow it)
@@ -280,6 +279,8 @@ export default async function handler(req, res) {
     } else if (mode === 'performance') {
       data = await performanceRead();
     } else if (mode === 'clan-perf') {
+      // loaded only for this mode, so a missing or broken clan-performance.js can never take the other modes down
+      const { clanPerformance } = await import('./_lib/clan-performance.js');
       data = await clanPerformance(req.query);
     } else if (mode === 'me') {
       data = req.query.id ? await meRead(req.query.id) : await meSearch(req.query.q);
