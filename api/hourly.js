@@ -8,6 +8,7 @@
 //   /api/hourly?mode=clan-perf&id=CLAN_ID                             -> Clan Performance: one clan's hourly + daily history
 //   /api/hourly?mode=me&q=NAME                                        -> home page: players whose name contains NAME ("Who are you in the game?")
 //   /api/hourly?mode=me&id=PLAYER_ID                                  -> home page: the dashboard for that player
+//   /api/hourly?mode=status                                           -> top bar: health of the New API / Old API (reads collection_runs, see _lib/status.js)
 //   /api/hourly?mode=perf-backfill&after=0                            -> (needs Authorization: Bearer <YOUR_ACTUAL_CRON_SECRET>) rebuild Player Performance records
 //                                                                        from stored snapshots; repeat with after=<next> until done:true
 //
@@ -282,10 +283,15 @@ export default async function handler(req, res) {
       // loaded only for this mode, so a missing or broken clan-performance.js can never take the other modes down
       const { clanPerformance } = await import('./_lib/clan-performance.js');
       data = await clanPerformance(req.query);
+    } else if (mode === 'status') {
+      // same idea: loaded only for this mode, so the status check can never take the other modes down
+      const { apiStatus } = await import('./_lib/status.js');
+      data = await apiStatus();
     } else if (mode === 'me') {
       data = req.query.id ? await meRead(req.query.id) : await meSearch(req.query.q);
     } else return res.status(400).json({ error: 'unknown mode' });
     res.setHeader('Cache-Control', pastDay ? 'public, s-maxage=3600, stale-while-revalidate=86400'
+      : mode === 'status' ? 'public, s-maxage=60, stale-while-revalidate=120'
       : mode === 'clan-perf' ? 'public, s-maxage=900, stale-while-revalidate=1800'
       : span === 'week' || span === 'month' ? 'public, s-maxage=900, stale-while-revalidate=1800'
       : 'public, s-maxage=300, stale-while-revalidate=600');
