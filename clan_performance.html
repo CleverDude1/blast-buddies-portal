@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clan Performance | Blast Buddies Tracker</title>
+<link rel="icon" href="images/icons/home.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Luckiest+Guy&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="clan-performance">
+<template id="page-content">
+<style>
+  .cp-find { position: relative; flex: 1 1 260px; max-width: 420px; }
+  .cp-find .search { width: 100%; }
+  .cp-list { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; margin: 0; padding: 4px; list-style: none;
+    background: #14100c; border: 1px solid rgba(255,255,255,.15); border-radius: 10px; max-height: 320px; overflow: auto; }
+  .cp-list li { padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+  .cp-list li:hover, .cp-list li.hi { background: rgba(255,255,255,.1); }
+  .cp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 12px 0; }
+  .cp-stat { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 12px 14px; }
+  .cp-stat small { display: block; opacity: .7; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .cp-stat b { display: block; font-size: 24px; margin: 4px 0 2px; }
+  .cp-stat span { font-size: 12.5px; opacity: .75; }
+  .cp-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+  .cp-badge.up { background: rgba(80,200,110,.22); color: #7be59a; }
+  .cp-badge.down { background: rgba(230,80,80,.22); color: #ff8e8e; }
+  .cp-badge.flat { background: rgba(255,255,255,.12); }
+  .cp-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .cp-rowl { display: flex; justify-content: space-between; gap: 10px; padding: 7px 8px; border-radius: 8px; cursor: pointer; }
+  .cp-rowl:hover { background: rgba(255,255,255,.08); }
+  .cp-svg { width: 100%; height: auto; display: block; }
+  .cp-grid { stroke: rgba(255,255,255,.12); stroke-width: 1; }
+  .cp-ax { fill: rgba(255,255,255,.6); font-size: 10px; }
+  .cp-bar { fill: var(--accent, #6fd36a); opacity: .85; }
+  .cp-bar.peak { fill: #ffc24a; opacity: 1; }
+  .cp-bar.part { opacity: .4; }
+  .cp-line { fill: none; stroke: #8ec5ff; stroke-width: 2; }
+  .cp-scroll { overflow-x: auto; }
+  .cp-heat { display: grid; grid-template-columns: 34px repeat(24, minmax(18px, 1fr)); gap: 3px; min-width: 560px; font-size: 10px; }
+  .cp-heat i { font-style: normal; opacity: .65; text-align: center; align-self: center; }
+  .cp-cell { aspect-ratio: 1.3; border-radius: 4px; background: var(--accent, #6fd36a); opacity: var(--a, 1); }
+  .cp-cell.empty { background: rgba(255,255,255,.06); opacity: 1; }
+  .cp-note { font-size: 12.5px; opacity: .7; margin: 8px 0 0; }
+  .cp-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+  .cp-head h2 { margin: 0; }
+</style>
+
+<section class="panel"><h1 class="page-title">Clan Performance</h1>
+  <p class="muted">Look up a clan to see its best hour, day and week, how it is trending, and when it scores most. Everything is built from the stored hourly clan snapshots, so it is kills only.</p></section>
+<div class="toolbar">
+  <div class="cp-find">
+    <input class="search" id="cpSearch" type="text" placeholder="Search for a clan name or tag" aria-label="Search for a clan" autocomplete="off">
+    <ul class="cp-list" id="cpList" hidden></ul>
+  </div>
+  <div class="seg" id="cpTz"><button data-tz="utc" class="on">UTC</button><button data-tz="local">My time</button></div>
+</div>
+<div class="status" id="cpStatus"></div>
+<div id="cpOut"></div>
+</template>
+<script src="js/layout.js"></script>
+<script>
+(() => {
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const num = n => Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  const short = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'k' : String(Math.round(n));
+  const pad = n => String(n).padStart(2, '0');
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const HOUR = 36e5, DAY = 864e5;
+  const $ = id => document.getElementById(id);
+  const out = $('cpOut'), status = $('cpStatus'), search = $('cpSearch'), list = $('cpList');
+  let ov = null, detail = null, useLocal = false, matches = [], hi = 0;
+  const cache = new Map();
+  const label = c => `${c.tag ? `[${esc(c.tag)}] ` : ''}${esc(c.name)}`;
+
+  // ---- time helpers (hours follow the UTC / My time switch; days and weeks are always UTC days) ----
+  const hourOf = ms => { const d = new Date(ms); return useLocal ? d.getHours() : d.getUTCHours(); };
+  const wdOf = ms => { const d = new Date(ms); return ((useLocal ? d.getDay() : d.getUTCDay()) + 6) % 7; };
+  const fmtHour = ms => { const d = new Date(Math.floor(ms / HOUR) * HOUR); return useLocal
+    ? `${MON[d.getMonth()]} ${d.getDate()}, ${pad(d.getHours())}:00` : `${MON[d.getUTCMonth()]} ${d.getUTCDate()}, ${pad(d.getUTCHours())}:00 UTC`; };
+  const fmtDay = ms => { const d = new Date(ms); return `${MON[d.getUTCMonth()]} ${d.getUTCDate()}`; };
+  const hr = h => `${pad(h)}:00–${pad((h + 1) % 24)}:00`;
+  const tzName = () => useLocal ? 'your local time' : 'UTC';
+  const weekStart = ms => ms - ((new Date(ms).getUTCDay() + 6) % 7) * DAY;
+
+  // ---- charts (plain SVG, no library) ----
+  function bars(vals, labels, o = {}) {
+    const w = 720, h = 190, pl = 34, pb = 22, pt = 8, n = vals.length, iw = w - pl - 4, ih = h - pb - pt, bw = iw / n;
+    const max = Math.max(1, ...vals.map(v => v ?? 0));
+    let s = `<svg viewBox="0 0 ${w} ${h}" class="cp-svg" role="img" aria-label="${esc(o.label || '')}">`;
+    for (const f of [0, .5, 1]) { const y = pt + ih - ih * f; s += `<line x1="${pl}" x2="${w - 4}" y1="${y}" y2="${y}" class="cp-grid"/><text x="${pl - 4}" y="${y + 3}" class="cp-ax" text-anchor="end">${short(max * f)}</text>`; }
+    vals.forEach((v, i) => {
+      if (v == null) return;
+      const bh = ih * v / max, cls = 'cp-bar' + (o.peak === i ? ' peak' : '') + (o.part && o.part[i] ? ' part' : '');
+      s += `<rect x="${(pl + i * bw + bw * .12).toFixed(1)}" y="${(pt + ih - bh).toFixed(1)}" width="${(bw * .76).toFixed(1)}" height="${bh.toFixed(1)}" rx="2" class="${cls}"><title>${esc(labels[i])}: ${num(v)}${o.unit || ' kills'}</title></rect>`;
+    });
+    const step = Math.ceil(n / (o.ticks || 10));
+    labels.forEach((l, i) => { if (i % step === 0) s += `<text x="${(pl + i * bw + bw / 2).toFixed(1)}" y="${h - 6}" class="cp-ax" text-anchor="middle">${esc(o.tick ? o.tick(l, i) : l)}</text>`; });
+    if (o.line) {
+      const pts = o.line.map((v, i) => v == null ? null : `${(pl + i * bw + bw / 2).toFixed(1)},${(pt + ih - ih * v / max).toFixed(1)}`).filter(Boolean);
+      if (pts.length > 1) s += `<polyline points="${pts.join(' ')}" class="cp-line"/>`;
+    }
+    return s + '</svg>';
+  }
+
+  // ---- numbers worked out from the hourly / daily data ----
+  function hourStats() {
+    const sum = Array(24).fill(0), cnt = Array(24).fill(0), hm = Array.from({ length: 7 }, () => ({ s: Array(24).fill(0), c: Array(24).fill(0) }));
+    for (const [ms, g, reset] of detail.hourly) {
+      if (reset) continue;                                   // a board reset hour is not a normal hour
+      const h = hourOf(ms), wd = wdOf(ms);
+      sum[h] += g; cnt[h]++; hm[wd].s[h] += g; hm[wd].c[h]++;
+    }
+    const avg = sum.map((s, i) => cnt[i] ? s / cnt[i] : null);
+    return { avg, cnt, hm };
+  }
+  function daysList() {   // the last 30 UTC days, null where we have no data
+    const today = Math.floor(Date.parse(detail.at) / DAY) * DAY, m = new Map(detail.daily.map(d => [d[0], d]));
+    return Array.from({ length: detail.historyDays }, (_, i) => { const ms = today - (detail.historyDays - 1 - i) * DAY, d = m.get(ms); return { ms, k: d ? d[1] : null, part: d ? !!d[2] : false, rank: d ? d[3] : null }; });
+  }
+  function weeksList(days) {
+    const m = new Map();
+    for (const d of days) { if (d.k == null) continue; const w = weekStart(d.ms), e = m.get(w) || { ms: w, k: 0, n: 0, part: false }; e.k += d.k; e.n++; if (d.part) e.part = true; m.set(w, e); }
+    return [...m.values()].sort((a, b) => a.ms - b.ms).map(w => ({ ...w, part: w.part || w.n < 7 }));
+  }
+  const trend = (a, b) => { if (a == null || !(b > 0)) return null; const p = (a - b) / b * 100; return { p, label: p > 10 ? 'Rising' : p < -10 ? 'Falling' : 'Steady', cls: p > 10 ? 'up' : p < -10 ? 'down' : 'flat' }; };
+  const badge = (t, sub) => t ? `<span class="cp-badge ${t.cls}">${t.label} ${t.p >= 0 ? '+' : ''}${t.p.toFixed(0)}%</span><br><span>${sub}</span>` : `<span>Not enough data yet</span>`;
+
+  // ---- screens ----
+  function drawOverview() {
+    const c = ov.clans, total = c.reduce((s, x) => s + x.kills, 0), top = c[0];
+    const hot = (key, n = 5) => c.filter(x => x[key] > 0).sort((a, b) => b[key] - a[key]).slice(0, n);
+    const perMember = c.filter(x => x.members > 0).map(x => ({ ...x, pm: x.kills / x.members })).sort((a, b) => b.pm - a.pm).slice(0, 5);
+    const rowsOf = (arr, f) => arr.length ? arr.map(x => `<div class="cp-rowl" data-clan="${esc(x.id)}"><span>${label(x)}</span><b>${f(x)}</b></div>`).join('') : '<p class="muted">No data yet.</p>';
+    out.innerHTML = `
+      <section class="panel"><h3>General stats</h3>
+        <div class="cp-stats">
+          <div class="cp-stat"><small>Clans on the board</small><b>${c.length}</b><span>top clans this month</span></div>
+          <div class="cp-stat"><small>Kills this month</small><b>${num(total)}</b><span>all clans on the board</span></div>
+          <div class="cp-stat"><small>Average per clan</small><b>${num(total / c.length)}</b><span>kills this month</span></div>
+          <div class="cp-stat"><small>#1 clan</small><b>${top ? label(top) : '-'}</b><span>${top ? num(top.kills) + ' kills' : ''}</span></div>
+        </div></section>
+      <section class="panel"><div class="cp-cols">
+        <div><h3>Hottest this hour</h3>${rowsOf(hot('gainHour'), x => '+' + num(x.gainHour))}</div>
+        <div><h3>Hottest today (UTC)</h3>${rowsOf(hot('gainDay'), x => '+' + num(x.gainDay))}</div>
+        <div><h3>Most kills per member</h3>${rowsOf(perMember, x => num(x.pm))}</div>
+      </div><p class="cp-note">Pick any clan above, or click one here, for its full report.</p></section>`;
+  }
+
+  function drawClan() {
+    const d = detail, c = d.clan, days = daysList(), weeks = weeksList(days), hs = hourStats();
+    // records
+    const fine = d.hourly.filter(h => !h[2]), bestHour = fine.reduce((a, b) => (!a || b[1] > a[1] ? b : a), null);
+    const withK = days.filter(x => x.k != null), bestDay = withK.reduce((a, b) => (!a || b.k > a.k ? b : a), null);
+    const fullWeeks = weeks.filter(w => !w.part), pool = fullWeeks.length ? fullWeeks : weeks, bestWeek = pool.reduce((a, b) => (!a || b.k > a.k ? b : a), null);
+    // peak hour of day and best 3-hour window
+    let peak = -1;
+    hs.avg.forEach((v, i) => { if (v != null && (peak < 0 || v > hs.avg[peak])) peak = i; });
+    let win = null;
+    for (let i = 0; i < 24; i++) { const v = [0, 1, 2].map(j => hs.avg[(i + j) % 24]); if (v.every(x => x != null)) { const s = v.reduce((a, b) => a + b, 0); if (!win || s > win.s) win = { i, s }; } }
+    // trends
+    const done = days.filter(x => x.k != null && !x.part).map(x => x.k);
+    let dTrend = null;
+    if (done.length >= 10) { const a = done.slice(-7), b = done.slice(-14, -7); if (b.length >= 3) dTrend = trend(a.reduce((x, y) => x + y, 0) / a.length, b.reduce((x, y) => x + y, 0) / b.length); }
+    const dw = fullWeeks.slice(-2), wTrend = dw.length === 2 ? trend(dw[1].k, dw[0].k) : null;
+    // 7-day moving average over the daily bars
+    const line = days.map((x, i) => { const w = days.slice(Math.max(0, i - 6), i + 1).filter(y => y.k != null && !y.part); return x.k != null && w.length >= 3 ? w.reduce((s, y) => s + y.k, 0) / w.length : null; });
+    const maxAvg = Math.max(0, ...hs.avg.map(v => v ?? 0));
+    const heat = hs.hm.map((row, wd) => `<i>${WD[wd]}</i>` + row.s.map((s, h) => {
+      if (!row.c[h]) return '<div class="cp-cell empty"></div>';
+      const v = s / row.c[h];
+      return `<div class="cp-cell" style="--a:${(0.12 + 0.88 * (maxAvg ? v / maxAvg : 0)).toFixed(2)}" title="${WD[wd]} ${hr(h)}: ${num(v)} kills per hour on average (${row.c[h]} sample${row.c[h] > 1 ? 's' : ''})"></div>`;
+    }).join('')).join('');
+    const heatHead = '<span></span>' + Array.from({ length: 24 }, (_, h) => `<i>${h % 3 === 0 ? pad(h) : ''}</i>`).join('');
+    const peakI = days.findIndex(x => bestDay && x.ms === bestDay.ms);
+
+    out.innerHTML = `
+      <section class="panel">
+        <div class="cp-head"><h2>${label(c)} <small class="muted">#${c.rank} of ${c.clans}</small></h2><button class="pill" id="cpBack">All clans</button></div>
+        <div class="cp-stats">
+          <div class="cp-stat"><small>Kills this month</small><b>${num(c.kills)}</b><span>${(c.share * 100).toFixed(1)}% of all clans${c.members ? ` · ${num(c.kills / c.members)} per member` : ''}</span></div>
+          <div class="cp-stat"><small>Highest hour</small><b>${bestHour ? '+' + num(bestHour[1]) : '-'}</b><span>${bestHour ? fmtHour(bestHour[0]) : 'no hourly data yet'}</span></div>
+          <div class="cp-stat"><small>Best day (last ${d.historyDays} days)</small><b>${bestDay ? '+' + num(bestDay.k) : '-'}</b><span>${bestDay ? fmtDay(bestDay.ms) + ' UTC' + (bestDay.part ? ' (so far)' : '') : ''}</span></div>
+          <div class="cp-stat"><small>Best week (last ${d.historyDays} days)</small><b>${bestWeek ? '+' + num(bestWeek.k) : '-'}</b><span>${bestWeek ? 'week of ' + fmtDay(bestWeek.ms) + (bestWeek.part ? ' (not a full week)' : '') : ''}</span></div>
+          <div class="cp-stat"><small>Peak hour (${tzName()})</small><b>${peak >= 0 ? hr(peak) : '-'}</b><span>${peak >= 0 ? `about ${num(hs.avg[peak])} kills per hour on average` : 'not enough hourly data'}</span></div>
+          <div class="cp-stat"><small>Best 3-hour window</small><b>${win ? pad(win.i) + ':00–' + pad((win.i + 3) % 24) + ':00' : '-'}</b><span>${win ? `about ${num(win.s)} kills in that window` : ''}</span></div>
+          <div class="cp-stat"><small>Daily trend</small>${badge(dTrend, 'last 7 days vs the 7 before')}</div>
+          <div class="cp-stat"><small>Weekly trend</small>${badge(wTrend, 'last full week vs the one before')}</div>
+        </div>
+      </section>
+      <section class="panel"><h3>Kills per day <small class="muted">(UTC days, last ${d.historyDays} days)</small></h3>
+        ${bars(days.map(x => x.k), days.map(x => fmtDay(x.ms)), { part: days.map(x => x.part), peak: peakI >= 0 ? peakI : undefined, line, label: 'Kills per day', ticks: 8 })}
+        <p class="cp-note">Gold = best day, blue line = 7-day average, faded bars are incomplete days.</p></section>
+      <section class="panel"><h3>Kills per week <small class="muted">(weeks start Monday 00:00 UTC)</small></h3>
+        ${weeks.length ? bars(weeks.map(w => w.k), weeks.map(w => fmtDay(w.ms)), { part: weeks.map(w => w.part), label: 'Kills per week', ticks: 8, tick: l => 'wk ' + l }) : '<p class="muted">Not enough days stored yet.</p>'}</section>
+      <section class="panel"><h3>When the clan scores <small class="muted">(average kills per hour, ${tzName()})</small></h3>
+        ${hs.cnt.some(Boolean) ? bars(hs.avg.map(v => v ?? 0), hs.avg.map((_, h) => hr(h)), { peak: peak >= 0 ? peak : undefined, unit: ' kills per hour on average', ticks: 12, tick: (l, i) => pad(i), label: 'Average kills by hour of day' }) : '<p class="muted">No hourly data yet.</p>'}
+        <h3 style="margin-top:18px">Weekday and hour heatmap</h3>
+        <div class="cp-scroll"><div class="cp-heat">${heatHead}${heat}</div></div>
+        <p class="cp-note">Based on the last ${d.hourlyDays} days. Each cell is an average over only a few days, so treat single cells as hints, not facts. Brighter = more kills.</p></section>
+      <p class="cp-note">${num(d.snapshots)} snapshots used. Hourly numbers are the gain between two stored snapshots, grouped by the hour they mostly cover. Hours where the board reset or a snapshot is missing are left out of hourly records.</p>`;
+    $('cpBack').onclick = () => select(null);
+  }
+
+  // ---- selecting a clan ----
+  async function select(id) {
+    const u = new URL(location.href);
+    id ? u.searchParams.set('clan', id) : u.searchParams.delete('clan');
+    history.replaceState(null, '', u);
+    list.hidden = true;
+    if (!id) { detail = null; search.value = ''; drawOverview(); status.textContent = ''; return; }
+    const known = ov.clans.find(x => x.id === id);
+    if (known) search.value = `${known.tag ? '[' + known.tag + '] ' : ''}${known.name}`;
+    status.textContent = 'Loading clan history... this can take a few seconds the first time.';
+    out.innerHTML = '';
+    try {
+      if (!cache.has(id)) { const r = await fetch(`/api/hourly?mode=clan-perf&id=${encodeURIComponent(id)}`); if (!r.ok) throw new Error(); cache.set(id, await r.json()); }
+      detail = cache.get(id); status.textContent = '';
+      if (!detail.ok) throw new Error();
+      if (!detail.found) { out.innerHTML = '<section class="panel"><p>This clan is not on the latest board, so there is nothing to show yet.</p><button class="pill" id="cpBack">All clans</button></section>'; $('cpBack').onclick = () => select(null); return; }
+      drawClan();
+    } catch (e) { status.textContent = 'Could not load this clan. Please try again later.'; }
+  }
+
+  // ---- search box ----
+  function showMatches() {
+    const q = search.value.trim().toLowerCase();
+    matches = !ov ? [] : ov.clans.filter(c => !q || `${c.tag} ${c.name}`.toLowerCase().includes(q)).slice(0, 8); hi = 0;
+    list.innerHTML = matches.map((c, i) => `<li data-id="${esc(c.id)}" class="${i === 0 ? 'hi' : ''}"><span>${label(c)}</span><small class="muted">#${c.rank}</small></li>`).join('');
+    list.hidden = !matches.length;
+  }
+  search.addEventListener('input', showMatches);
+  search.addEventListener('focus', showMatches);
+  search.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); hi = (hi + (e.key === 'ArrowDown' ? 1 : -1) + matches.length) % (matches.length || 1); [...list.children].forEach((li, i) => li.classList.toggle('hi', i === hi)); }
+    else if (e.key === 'Enter' && matches[hi]) select(matches[hi].id);
+    else if (e.key === 'Escape') list.hidden = true;
+  });
+  list.addEventListener('mousedown', e => { const li = e.target.closest('[data-id]'); if (li) { e.preventDefault(); select(li.dataset.id); } });
+  document.addEventListener('click', e => { if (!e.target.closest('.cp-find')) list.hidden = true; });
+  out.addEventListener('click', e => { const r = e.target.closest('[data-clan]'); if (r) select(r.dataset.clan); });
+  $('cpTz').addEventListener('click', e => {
+    const b = e.target.closest('[data-tz]'); if (!b) return;
+    useLocal = b.dataset.tz === 'local';
+    document.querySelectorAll('#cpTz button').forEach(x => x.classList.toggle('on', x === b));
+    if (detail && detail.found) drawClan();
+  });
+
+  async function init() {
+    status.textContent = 'Loading...';
+    try {
+      const r = await fetch('/api/hourly?mode=clan-perf'); if (!r.ok) throw new Error();
+      ov = await r.json(); if (!ov.ok) throw new Error();
+      status.textContent = '';
+      const id = new URL(location.href).searchParams.get('clan');
+      if (id) select(id); else drawOverview();
+    } catch (e) { status.textContent = 'Could not load clan data. Please try again later.'; }
+  }
+  init();
+})();
+</script>
+</body>
+</html>
