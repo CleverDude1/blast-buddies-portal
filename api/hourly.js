@@ -4,6 +4,8 @@
 //   /api/hourly?mode=clan-updates&kind=all|left|joined|renamed|access|color&q=&offset=   -> Clan Updates feed
 //   /api/hourly?mode=vote                                             -> Community Vote (GET = status/results, POST = submit ballot)
 //   /api/hourly?mode=performance                                      -> Player Performance records (all boards)
+//   /api/hourly?mode=clan-perf                                        -> Clan Performance: overview of every clan (kills, gain this hour / today)
+//   /api/hourly?mode=clan-perf&id=CLAN_ID                             -> Clan Performance: one clan's hourly + daily history
 //   /api/hourly?mode=me&q=NAME                                        -> home page: players whose name contains NAME ("Who are you in the game?")
 //   /api/hourly?mode=me&id=PLAYER_ID                                  -> home page: the dashboard for that player
 //   /api/hourly?mode=perf-backfill&after=0                            -> (needs Authorization: Bearer <YOUR_ACTUAL_CRON_SECRET>) rebuild Player Performance records
@@ -37,6 +39,7 @@ import { clanUpdates } from './_lib/clan-updates.js';
 import { playerUpdates } from './_lib/player-updates.js';
 import voteHandler from './_lib/vote.js';
 import { performanceRead, performanceBackfill } from './_lib/performance.js';
+import { clanPerformance } from './_lib/clan-performance.js';
 import { meSearch, meRead } from './_lib/me.js';
 
 // a week or month summary reads a lot of snapshots; give Vercel more time (remove if your plan does not allow it)
@@ -276,10 +279,13 @@ export default async function handler(req, res) {
       data = await playerUpdates(req.query);
     } else if (mode === 'performance') {
       data = await performanceRead();
+    } else if (mode === 'clan-perf') {
+      data = await clanPerformance(req.query);
     } else if (mode === 'me') {
       data = req.query.id ? await meRead(req.query.id) : await meSearch(req.query.q);
     } else return res.status(400).json({ error: 'unknown mode' });
     res.setHeader('Cache-Control', pastDay ? 'public, s-maxage=3600, stale-while-revalidate=86400'
+      : mode === 'clan-perf' ? 'public, s-maxage=900, stale-while-revalidate=1800'
       : span === 'week' || span === 'month' ? 'public, s-maxage=900, stale-while-revalidate=1800'
       : 'public, s-maxage=300, stale-while-revalidate=600');
     res.status(200).json(data);
