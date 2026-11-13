@@ -74,6 +74,8 @@
   let ov = null, detail = null, useLocal = false, matches = [], hi = 0;
   const cache = new Map();
   const label = c => `${c.tag ? `[${esc(c.tag)}] ` : ''}${esc(c.name)}`;
+  const stale = at => { const h = (Date.now() - Date.parse(at)) / 36e5;
+    return h > 3 ? `<p class="cp-note" style="padding:0 4px">The newest stored clan data is about ${Math.round(h)} hours old, so the most recent hours may be missing until updates resume.</p>` : ''; };
 
   // ---- time helpers (hours follow the UTC / My time switch; days and weeks are always UTC days) ----
   const hourOf = ms => { const d = new Date(ms); return useLocal ? d.getHours() : d.getUTCHours(); };
@@ -134,7 +136,7 @@
     const hot = (key, n = 5) => c.filter(x => x[key] > 0).sort((a, b) => b[key] - a[key]).slice(0, n);
     const perMember = c.filter(x => x.members > 0).map(x => ({ ...x, pm: x.kills / x.members })).sort((a, b) => b.pm - a.pm).slice(0, 5);
     const rowsOf = (arr, f) => arr.length ? arr.map(x => `<div class="cp-rowl" data-clan="${esc(x.id)}"><span>${label(x)}</span><b>${f(x)}</b></div>`).join('') : '<p class="muted">No data yet.</p>';
-    out.innerHTML = `
+    out.innerHTML = stale(ov.at) + `
       <section class="panel"><h3>General stats</h3>
         <div class="cp-stats">
           <div class="cp-stat"><small>Clans on the board</small><b>${c.length}</b><span>top clans this month</span></div>
@@ -176,7 +178,7 @@
     const heatHead = '<span></span>' + Array.from({ length: 24 }, (_, h) => `<i>${h % 3 === 0 ? pad(h) : ''}</i>`).join('');
     const peakI = days.findIndex(x => bestDay && x.ms === bestDay.ms);
 
-    out.innerHTML = `
+    out.innerHTML = stale(d.at) + `
       <section class="panel">
         <div class="cp-head"><h2>${label(c)} <small class="muted">#${c.rank} of ${c.clans}</small></h2><button class="pill" id="cpBack">All clans</button></div>
         <div class="cp-stats">
