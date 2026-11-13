@@ -73,6 +73,13 @@
   const out = $('cpOut'), status = $('cpStatus'), search = $('cpSearch'), list = $('cpList');
   let ov = null, detail = null, useLocal = false, matches = [], hi = 0;
   const cache = new Map();
+  async function getJson(url) {
+    const r = await fetch(url), t = await r.text();
+    let j = null; try { j = JSON.parse(t); } catch (e) {}
+    if (!r.ok) throw new Error((j && j.error) || `server returned ${r.status}`);
+    if (!j) throw new Error('the server did not return JSON');
+    return j;
+  }
   const label = c => `${c.tag ? `[${esc(c.tag)}] ` : ''}${esc(c.name)}`;
   const stale = at => { const h = (Date.now() - Date.parse(at)) / 36e5;
     return h > 3 ? `<p class="cp-note" style="padding:0 4px">The newest stored clan data is about ${Math.round(h)} hours old, so the most recent hours may be missing until updates resume.</p>` : ''; };
@@ -218,12 +225,12 @@
     status.textContent = 'Loading clan history... this can take a few seconds the first time.';
     out.innerHTML = '';
     try {
-      if (!cache.has(id)) { const r = await fetch(`/api/hourly?mode=clan-perf&id=${encodeURIComponent(id)}`); if (!r.ok) throw new Error(); cache.set(id, await r.json()); }
+      if (!cache.has(id)) cache.set(id, await getJson(`/api/hourly?mode=clan-perf&id=${encodeURIComponent(id)}`));
       detail = cache.get(id); status.textContent = '';
-      if (!detail.ok) throw new Error();
+      if (!detail.ok) throw new Error(detail.error || 'no data');
       if (!detail.found) { out.innerHTML = '<section class="panel"><p>This clan is not on the latest board, so there is nothing to show yet.</p><button class="pill" id="cpBack">All clans</button></section>'; $('cpBack').onclick = () => select(null); return; }
       drawClan();
-    } catch (e) { status.textContent = 'Could not load this clan. Please try again later.'; }
+    } catch (e) { status.textContent = 'Could not load this clan: ' + e.message; }
   }
 
   // ---- search box ----
@@ -253,12 +260,11 @@
   async function init() {
     status.textContent = 'Loading...';
     try {
-      const r = await fetch('/api/hourly?mode=clan-perf'); if (!r.ok) throw new Error();
-      ov = await r.json(); if (!ov.ok) throw new Error();
+      ov = await getJson('/api/hourly?mode=clan-perf'); if (!ov.ok) throw new Error(ov.error || 'no data');
       status.textContent = '';
       const id = new URL(location.href).searchParams.get('clan');
       if (id) select(id); else drawOverview();
-    } catch (e) { status.textContent = 'Could not load clan data. Please try again later.'; }
+    } catch (e) { status.textContent = 'Could not load clan data: ' + e.message; }
   }
   init();
 })();
