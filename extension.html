@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blast Buddies Companion extension</title>
+<style>
+:root{--bg:#0b1a12;--panel:#10261a;--line:#1f4a30;--text:#d7f5e0;--muted:#8fb59d;--accent:#6fd69a;--btn:#2f9e5f;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:40px 18px 80px}
+h1{font-size:clamp(28px,6vw,40px);line-height:1.15;margin:0 0 12px}
+h2{font-size:20px;margin:44px 0 10px;color:var(--accent)}
+p{margin:0 0 12px;max-width:62ch}
+.muted{color:var(--muted);font-size:14px}
+.btn{display:inline-block;background:var(--btn);color:#04130b;font-weight:700;text-decoration:none;padding:12px 22px;border-radius:10px;margin:8px 0 6px}
+.btn:hover{background:#3bb872}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+ul,ol{padding-left:22px;margin:0}
+li{margin:0 0 8px;max-width:62ch}
+li strong{color:#eafff1}
+code{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.92em}
+.finder{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px}
+.finder input{width:100%;background:var(--bg);color:var(--text);border:1px solid #2f6b46;border-radius:8px;padding:10px 12px;font:inherit}
+#out{margin-top:10px;color:var(--muted);font-size:14px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line);color:var(--text)}
+.row:first-child{border-top:0}
+.row span{flex:1 1 140px}
+.row small{color:var(--muted)}
+.row button{background:transparent;color:var(--accent);border:1px solid #2f6b46;border-radius:7px;padding:5px 10px;font:inherit;font-size:13px;cursor:pointer}
+.row button:hover:not(:disabled){background:#163826}
+.row button:disabled{opacity:.4;cursor:default}
+</style>
+</head>
+<body>
+<main>
+  <h1>Blast Buddies Companion</h1>
+  <p>A small browser extension that follows your grind and your clan rivalry while you play, so you don’t have to keep checking stats pages.</p>
+  <a class="btn" href="downloads/blast-buddies-companion.zip" download>Download for Chrome and Edge</a>
+  <p class="muted">Version 0.1.0. Free and unofficial. It works on Chrome, Edge and other Chromium browsers.</p>
+
+  <h2>What it does</h2>
+  <ul>
+    <li><strong>Hourly gains.</strong> Your kills over the last hour, on the game screen and on the toolbar icon.</li>
+    <li><strong>Rival clan comparison.</strong> Your clan against your rival per hour, with the kill gap between you.</li>
+    <li><strong>Red outline warning.</strong> The game window gets a red border when your rival is close to passing you. You choose how close.</li>
+    <li><strong>Overtake alerts.</strong> A notification when the rival closes in, passes you, or when you take the lead back.</li>
+    <li><strong>While you were away.</strong> When you come back, a popup shows what your clan and the rival gained while you were gone.</li>
+    <li><strong>Busiest hours.</strong> Tells you when the game is usually busiest, like “busiest in 3h”.</li>
+    <li><strong>Session summary.</strong> When you stop playing, you see how long you played and how many kills you got.</li>
+    <li><strong>Your choice.</strong> Every feature has an on/off switch and its own numbers in the extension dashboard.</li>
+  </ul>
+
+  <h2>Install it</h2>
+  <ol>
+    <li>Download the zip above and unzip it. You get a folder called <code>blast-buddies-companion</code>.</li>
+    <li>Open <code>chrome://extensions</code> in Chrome, or <code>edge://extensions</code> in Edge.</li>
+    <li>Turn on <strong>Developer mode</strong>.</li>
+    <li>Click <strong>Load unpacked</strong> and choose the unzipped folder.</li>
+    <li>Pin the extension from the puzzle icon in the toolbar, so you can see its badge.</li>
+  </ol>
+
+  <h2>Set it up</h2>
+  <ol>
+    <li>Click the extension icon. The dashboard opens.</li>
+    <li>Find your IDs with the search below, then paste them into <strong>Your clan ID</strong>, <strong>Rival clan ID</strong> and <strong>Your player ID</strong>.</li>
+    <li>Switch features on or off and set your numbers, like how close the rival must be before the red outline shows.</li>
+    <li>Open the game. Your numbers appear in the top right corner.</li>
+  </ol>
+
+  <div class="finder">
+    <label for="q"><strong>Find your IDs</strong></label>
+    <p class="muted">Type a player name and copy the IDs. For a rival clan’s ID, search any member of that clan.</p>
+    <input id="q" type="search" placeholder="Player name" autocomplete="off">
+    <div id="out" aria-live="polite"></div>
+  </div>
+
+  <h2>Good to know</h2>
+  <ul>
+    <li>The tracker updates about once an hour, so your numbers, the gap and the red outline refresh about hourly too.</li>
+    <li>It only reads public stats from this site. Your settings stay on your device, and it never asks for your login.</li>
+    <li>Chrome may show a “disable developer mode extensions” message when it starts. Dismiss it and keep the extension.</li>
+    <li>To update, download the new zip, replace the old folder, and click the refresh icon on the extension’s card in <code>chrome://extensions</code>.</li>
+  </ul>
+</main>
+
+<script>
+const q = document.getElementById('q'), out = document.getElementById('out');
+let players = null, timer;
+
+async function load() {
+  if (players) return players;
+  const r = await fetch('/api/stats?mode=player-list');
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  players = (await r.json()).players || [];
+  return players;
+}
+function copyBtn(label, value) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = label; b.disabled = !value;
+  b.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      b.textContent = 'Copied'; setTimeout(() => (b.textContent = label), 1200);
+    } catch (e) { prompt('Copy this ID', value); }
+  };
+  return b;
+}
+function show(list) {
+  out.replaceChildren();
+  if (!list.length) { out.textContent = 'No player found. Check the spelling.'; return; }
+  for (const p of list) {
+    const row = document.createElement('div'); row.className = 'row';
+    const who = document.createElement('span'); who.textContent = p.name || p.player_id;
+    if (p.clan_tag) { const tag = document.createElement('small'); tag.textContent = ' [' + p.clan_tag + ']'; who.append(tag); }
+    row.append(who, copyBtn('Copy player ID', p.player_id), copyBtn('Copy clan ID', p.clan_id));
+    out.append(row);
+  }
+}
+q.addEventListener('input', () => {
+  clearTimeout(timer);
+  timer = setTimeout(async () => {
+    const s = q.value.trim().toLowerCase();
+    if (s.length < 2) { out.textContent = ''; return; }
+    try {
+      const list = await load();
+      const starts = p => (p.name || '').toLowerCase().startsWith(s) ? 1 : 0;
+      show(list.filter(p => (p.name || '').toLowerCase().includes(s)).sort((a, b) => starts(b) - starts(a)).slice(0, 8));
+    } catch (e) { out.textContent = 'Couldn’t load players. Try again in a moment.'; }
+  }, 250);
+});
+</script>
+</body>
+</html>
