@@ -8,6 +8,12 @@ const CACHE_KEY = 'bb-snapshot-v1';
 const CACHE_MS = 5 * 60 * 1000;
 const BOARD_N = 100;   // daily / weekly / clans show the top 100 (that is all the API publishes)
 
+// BACKUP: if the main API does not answer (error, rate limit, no answer within TIMEOUT_MS, stale or empty data), the page is built from the
+// old per-board APIs on your own server instead. /api/leaderboard-week returns the weekly AND daily boards together.
+// The backup has no clan history and may lack some player details (weapons, lifetime stats).
+const API_TIMEOUT_MS = 10000;
+const BACKUP = { week: '/api/leaderboard-week', ranked: '/api/leaderboard-ranked', clans: '/api/clan', rankedSeason: 3 };   // rankedSeason: used if the answer does not say
+
 // xpToLevel() and MAX_LEVEL come from js/level.js
 // window.BB_WEAPONS (weapon id -> name, matches images/weapons/<name>.png) comes from js/weapon-name.js
 
@@ -75,29 +81,87 @@ const weaponImg = (id, style = '') => {
   return `<img${style ? ` style="${style}"` : ''} src="images/weapons/${esc(name)}.png" alt="${esc(weaponLabel(id))}" title="${esc(weaponLabel(id))}" onerror="this.onerror=function(){this.onerror=null;this.src='images/placeholder.png'};this.src='images/weapons/${esc(id)}.png'">`;
 };
 
-// ================= SNAPSHOT (one request, cached) =================
+// ================= SNAPSHOT (one request, cached, with backup) =================
 let snap = null, snapAt = 0, snapNote = '';
+
+// fetch with a time limit: an API that never answers counts as "not responding"
+async function fetchLimited(url, ms = API_TIMEOUT_MS) {
+  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), ms);
+  try { return await fetch(url, { signal: ctrl.signal }); }
+  catch (e) { throw e && e.name === 'AbortError' ? new Error(`no answer within ${Math.round(ms / 1000)} seconds`) : e; }
+  finally { clearTimeout(timer); }
+}
+const hasBoards = j => !!(j && (listOf(j.leaderboards?.daily).length || listOf(j.leaderboards?.weekly).length || listOf(j.clans).length || rankedSeasons(j).length));
+
+// finds the array of records (rows holding idKey) anywhere inside an answer
+function findList(d, idKey, depth = 0) {
+  if (Array.isArray(d)) return d;
+  if (!d || typeof d !== 'object' || depth > 3) return [];
+  for (const v of Object.values(d)) if (Array.isArray(v) && v.length && typeof v[0] === 'object' && idKey in v[0]) return v;
+  for (const v of Object.values(d)) { const f = findList(v, idKey, depth + 1); if (f.length) return f; }
+  return [];
+}
+
+// Build a snapshot with the same shape as the main API's from the old per-board APIs on this site.
+async function loadBackup() {
+  const get = async url => { const r = await fetchLimited(url); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); };
+  const [wk, rk, cl] = await Promise.allSettled([get(BACKUP.week), get(`${BACKUP.ranked}?season=${BACKUP.rankedSeason}`), get(BACKUP.clans)]);
+  const out = { generatedAt: new Date().toISOString(), metadata: { backup: true }, leaderboards: {}, ranked: {}, clans: { top: [] } };
+  if (wk.status === 'fulfilled') {
+    const weekly = findList(wk.value.data, 'playerId');
+    if (weekly.length) out.leaderboards.weekly = { top: weekly };
+    const daily = wk.value.daily && wk.value.daily.success ? findList(wk.value.daily.data, 'playerId') : [];
+    if (daily.length) { out.leaderboards.daily = { top: daily }; out.metadata.dailyEstimated = wk.value.daily.approximate !== false; }
+  }
+  if (rk.status === 'fulfilled') {
+    const rows = findList(rk.value.data, 'playerId');
+    if (rows.length) out.ranked.current = { season: Number(rk.value.season) || BACKUP.rankedSeason, top: rows };
+  }
+  if (cl.status === 'fulfilled') {
+    const rows = findList(cl.value.data, 'clanId').slice().sort((a, b) => (b.kills || 0) - (a.kills || 0));
+    if (rows.length) out.clans = { top: rows };
+  }
+  if (!hasBoards(out)) throw new Error('the backup API returned nothing');
+  return out;
+}
+const backupNote = s => ' Using the backup API because the main API did not respond.'
+  + (s.metadata?.dailyEstimated ? ' Daily is estimated from the weekly board.' : (s.leaderboards?.daily ? '' : ' The daily board is not available right now.'))
+  + ' Some player details (weapons, lifetime stats) may be missing.';
 
 async function loadSnapshot() {
   if (snap && Date.now() - snapAt < CACHE_MS) return;
   let stored = null;
   try { stored = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { /* no usable cache */ }
-  if (stored && Date.now() - stored.at < CACHE_MS) { snap = stored.data; snapAt = stored.at; snapNote = ''; return; }
+  if (stored && Date.now() - stored.at < CACHE_MS) { snap = stored.data; snapAt = stored.at; snapNote = stored.backup ? backupNote(snap) : ''; return; }
+  const save = (data, backup) => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: snapAt, data, backup })); } catch (e) { /* too big for storage: memory cache still works */ } };
+
+  // 1) the main API
+  let primary = null, primaryErr = null;
   try {
-    const res = await fetch(API_URL);
+    const res = await fetchLimited(API_URL);
     if (res.status === 429) {
       const wait = Number(res.headers.get('Retry-After')) || 300;
       throw new Error(`rate limited, try again in about ${Math.ceil(wait / 60)} min`);
     }
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    snap = await res.json(); snapAt = Date.now(); snapNote = '';
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: snapAt, data: snap })); } catch (e) { /* too big for storage: memory cache still works */ }
-  } catch (e) {
-    console.warn('API failed:', e);
-    if (!snap && stored) { snap = stored.data; snapAt = stored.at; }
-    if (!snap) throw e;
-    snapNote = ` (couldn't refresh: ${e.message}. Showing the last saved data.)`;
-  }
+    primary = await res.json();
+    if (!hasBoards(primary)) throw new Error('the API returned no leaderboards');
+  } catch (e) { primaryErr = e; primary = null; console.warn('Main API failed:', e); }
+
+  // a good, fresh answer from the main API is used as is
+  if (primary && primary.metadata?.stale !== true) { snap = primary; snapAt = Date.now(); snapNote = ''; save(snap, false); return; }
+
+  // 2) the backup API (also used when the main API says its data is stale)
+  try {
+    const b = await loadBackup();
+    snap = b; snapAt = Date.now(); snapNote = backupNote(b); save(b, true); return;
+  } catch (be) { console.warn('Backup API failed:', be); }
+
+  // 3) both failed: stale main data is better than nothing, then the last saved copy
+  if (primary) { snap = primary; snapAt = Date.now(); snapNote = ''; save(snap, false); return; }
+  if (!snap && stored) { snap = stored.data; snapAt = stored.at; }
+  if (!snap) throw primaryErr || new Error('no data available');
+  snapNote = ` (couldn't refresh: ${primaryErr?.message}. Showing the last saved data.)`;
 }
 
 // ---- pull the pieces out of the snapshot ----
@@ -266,6 +330,7 @@ async function applyHourly() {
   else if (view.type === 'ranked') status = `Ranked season ${view.season}: ${rows.length} players.`;
   else if (view.type === 'history') status = `Top ${rows.length} clans in ${monthLabel(view.period)}. Click the icon on a clan to see every member's kills.`;
   else status = `Top ${rows.length} clans this month.`;
+  if (isBoard && !rows.length && snap.metadata?.backup) status = `The ${view.type} board is not available from the backup API right now.`;
   $('status').innerHTML = status + stamp + esc(snapNote) + (snap.metadata?.stale ? ' <b>Data is stale.</b>' : '');
   render();
 }
@@ -322,11 +387,11 @@ function render() {
       return `<div class="lb-row">
         <span class="rank">${r.rank}${r.hm ? r.hm.move : ''}</span>
         <span class="pname" title="${esc(p.name)}">${esc(p.name)}</span>
-        <div class="stat"><div class="top"><span>${r.level}</span><span class="pct new">/ ${MAX_LEVEL}</span></div><div class="bar b-lvl"><i style="width:${r.level / MAX_LEVEL * 100}%"></i></div></div>
+        ${r.level != null ? `<div class="stat"><div class="top"><span>${r.level}</span><span class="pct new">/ ${MAX_LEVEL}</span></div><div class="bar b-lvl"><i style="width:${r.level / MAX_LEVEL * 100}%"></i></div></div>` : '<span class="muted">-</span>'}
         ${statCell(fmt(p.kills), r.kc, 'high', 'b-kills', r.hm?.d.kills)}
         ${statCell(fmt(p.deaths), r.dc, 'low', 'b-deaths', r.hm?.d.deaths)}
         ${statCell(r.kdr.toFixed(2), r.rc, 'high', 'b-kdr', r.hm?.d.kdr)}
-        <span class="weapon">${weaponImg(p.topWeaponId)}</span>
+        <span class="weapon">${p.topWeaponId != null ? weaponImg(p.topWeaponId) : ''}</span>
         <span class="clan" style="color:${col}">${p.clanTag ? esc(p.clanTag) : ''}</span>
         <button class="inspect" data-id="${esc(p.playerId)}" aria-label="Player details for ${esc(p.name)}"><img src="images/icons/inspect.png" alt="" onerror="${PH}"></button>
       </div>`;
@@ -428,7 +493,7 @@ $('rows').addEventListener('click', e => {
     </div>`;
   } else {
     block = `<h4>${view.type === 'weekly' ? 'This week' : 'Today'}</h4><div class="dlg-grid">
-      <div>Level<b>${r.level}</b></div><div>Total XP<b>${fmt(p.totalXp)}</b></div>
+      ${r.level != null ? `<div>Level<b>${r.level}</b></div>` : ''}${p.totalXp != null ? `<div>Total XP<b>${fmt(p.totalXp)}</b></div>` : ''}
       <div>Kills<b>${fmt(p.kills)}</b></div><div>Deaths<b>${fmt(p.deaths)}</b></div>
       <div>Assists<b>${fmt(p.assists)}</b></div><div>KDR<b>${r.kdr.toFixed(2)}</b></div>
     </div>`;
@@ -453,7 +518,7 @@ $('xlsx').onclick = () => {
     data = rows.map(r => ({ Rank: r.rank, Nickname: r.p.name, PlayerId: r.p.playerId, Level: r.level ?? '', Trophies: r.p.trophies,
       Wins: r.p.rankedWins, Losses: r.p.rankedLosses, WeaponId: r.p.topWeaponId ?? '', Clan: r.p.clanTag || '' }));
   } else {
-    data = rows.map(r => ({ Rank: r.rank, Nickname: r.p.name, PlayerId: r.p.playerId, Level: r.level, TotalXP: r.p.totalXp,
+    data = rows.map(r => ({ Rank: r.rank, Nickname: r.p.name, PlayerId: r.p.playerId, Level: r.level ?? '', TotalXP: r.p.totalXp ?? '',
       Kills: r.p.kills, 'Kills vs best %': pc(r.kc), Deaths: r.p.deaths, 'Deaths vs best %': pc(r.dc),
       KDR: +r.kdr.toFixed(2), 'KDR vs best %': pc(r.rc), Assists: r.p.assists, WeaponId: r.p.topWeaponId, Clan: r.p.clanTag || '' }));
   }
