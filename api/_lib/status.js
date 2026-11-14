@@ -5,7 +5,7 @@
 // 5 minutes per IP); it reads what the collector wrote to collection_runs (status ok | partial | failed, plus an errors list).
 //   - failed  = the fetch failed or the upstream snapshot was stale (collect.js: no successful fetch)  -> red
 //   - partial = the fetch worked but something after it errored                                         -> amber
-//   - no run finished successfully for a while (the hourly cron stopped, or the run crashed)            -> amber, then red
+//   - the newest run never finished (timed out / crashed), or no good run for 2.5 hours                -> red; a good run 75+ min old -> amber
 // "Old API" is not connected yet: it always reports state "off" (grey). Connect it in oldApi() below later.
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY
 import { rest } from './shared.js';
@@ -43,9 +43,15 @@ async function newApi() {
     if (last.status === 'failed') bump('down', 'The last collection failed: the API could not be fetched or its snapshot was stale.');
     if (sinceGood > DOWN_MIN) bump('down', lastGood ? `No successful collection for ${Math.round(sinceGood / 60 * 10) / 10} hours.` : 'There has been no successful collection yet.');
     else if (sinceGood > OK_MIN) bump('warn', `The last successful collection is ${Math.round(sinceGood)} minutes old (it normally runs every 60).`);
+    // errors with a "source" (and no "step") come from fetching the API itself: unreachable, stale, or boards missing from the answer
+    const apiErrs = last.errors.filter(e => e.source && !e.step);
+    const empty = apiErrs.filter(e => /board missing|empty/i.test(String(e.error ?? e.message)));
+    if (empty.length >= 3) bump('down', 'The API answered, but most of its boards were empty.');
+    else if (apiErrs.length && last.status !== 'failed') bump('warn', 'The API answered, but some of its boards were missing or stale.');
     if (last.status === 'partial') bump('warn', 'The API answered, but some part of the collection reported errors.');
+    // a run that started long ago and never finished timed out or crashed: usually the API hanging, so this counts as down
     const newest = runs[0];
-    if (newest && !newest.status && (now - newest.startedAt) / MIN > CRASH_MIN) bump('warn', 'The newest collection run never finished (it crashed or timed out).');
+    if (newest && !newest.status && (now - newest.startedAt) / MIN > CRASH_MIN) bump('down', 'The newest collection run never finished: it crashed or timed out, usually because the API did not answer.');
   }
 
   return {
