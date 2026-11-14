@@ -25,6 +25,7 @@ const NAV = [
   ['vote','Community Vote','vote.html'],
   ['updates','Updates','updates.html'],
   ['skin','Skin Lab','skin-lab.html'],
+  ['extensions','Extensions','extension.html'],
   ['#','Analytics'],
   ['statistics','Statistics','statistics.html'],
   ['activity','Player Activity','player-activity.html'],
