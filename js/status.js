@@ -1,5 +1,6 @@
 // Top bar: "New API" and "Old API" buttons.
-//   New API: green = working, amber = problems, red + glowing = not working.
+//   New API: green (soft glow) = in use and working, even if it has problems: then a small amber "!" badge shows on the button.
+//            red + glowing = not working.
 //   Old API: yellow (soft glow) = on standby while the New API works, GREEN = it has taken over because the New API is down,
 //            amber = it took over but only partly works, red + glowing = both APIs are down, grey = status not available.
 // Data: /api/hourly?mode=status (see api/_lib/status.js). Checked once a minute while the tab is open. Click a button for details.
@@ -23,16 +24,20 @@
 .api-pill{padding:0 14px;gap:9px;font-size:14px}
 .api-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#6b7360;flex:none}
 .api-pill.ok .api-dot{background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,.6)}
+.api-pill.ok{border-color:#4ade80 !important;animation:api-glow-g 3s ease-in-out infinite !important}
+.api-bang{position:absolute;top:-7px;right:-7px;width:19px;height:19px;border-radius:50%;background:#fbbf24;color:#1a1400;font-weight:800;font-size:13px;line-height:19px;text-align:center;box-shadow:0 0 8px rgba(251,191,36,.85);pointer-events:none;z-index:2}
 .api-pill.warn .api-dot{background:#fbbf24;box-shadow:0 0 6px rgba(251,191,36,.55)}
 .api-pill.standby{border-color:#fbbf24 !important;animation:api-glow-y 2.6s ease-in-out infinite !important}
 .api-pill.standby .api-dot{background:#fbbf24;box-shadow:0 0 8px #fbbf24}
 .api-pill.down{border-color:#ff4d4d !important;background:rgba(120,20,20,.55) !important;color:#fff !important;animation:api-glow 1.4s ease-in-out infinite !important}
 .api-pill.down .api-dot{background:#ff4d4d;box-shadow:0 0 8px #ff4d4d}
 @keyframes api-glow{0%,100%{box-shadow:0 0 4px 0 rgba(255,60,60,.4),inset 0 0 6px rgba(255,60,60,.3)}50%{box-shadow:0 0 18px 4px rgba(255,60,60,.9),inset 0 0 12px rgba(255,60,60,.6)}}
+@keyframes api-glow-g{0%,100%{box-shadow:0 0 3px 0 rgba(74,222,128,.25),inset 0 0 5px rgba(74,222,128,.15)}50%{box-shadow:0 0 13px 3px rgba(74,222,128,.6),inset 0 0 8px rgba(74,222,128,.3)}}
 @keyframes api-glow-y{0%,100%{box-shadow:0 0 3px 0 rgba(251,191,36,.3),inset 0 0 5px rgba(251,191,36,.2)}50%{box-shadow:0 0 14px 3px rgba(251,191,36,.7),inset 0 0 9px rgba(251,191,36,.4)}}
 @media(prefers-reduced-motion:reduce){
   .api-pill.down{animation:none !important;box-shadow:0 0 12px 2px rgba(255,60,60,.8),inset 0 0 10px rgba(255,60,60,.5) !important}
-  .api-pill.standby{animation:none !important;box-shadow:0 0 10px 2px rgba(251,191,36,.6) !important}}
+  .api-pill.standby{animation:none !important;box-shadow:0 0 10px 2px rgba(251,191,36,.6) !important}
+  .api-pill.ok{animation:none !important;box-shadow:0 0 9px 2px rgba(74,222,128,.55) !important}}
 .api-pop{position:absolute;right:0;top:52px;z-index:30;width:min(340px,86vw);background:var(--card,#161c11);border:1px solid var(--line,#2a3322);border-radius:12px;padding:14px 16px;text-align:left;color:var(--text,#f1efe6)}
 .api-pop[hidden]{display:none}
 .api-pop h4{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:15px}
@@ -111,8 +116,11 @@
     const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : null;
     root.innerHTML = KEYS.map(([k, label]) => {
       const s = get(k), open = openKey === k;
-      return `<div class="api-wrap"><button type="button" class="pill api-pill ${esc(s.state)}" data-k="${k}" data-state="${esc(s.state)}" aria-expanded="${open}" aria-haspopup="true" aria-label="${label} API ${WORD[s.state] || ''}${s.tag ? ' (' + esc(s.tag) + ')' : ''}">`
+      // the New API is green whenever it is the one in use, even with problems: those are shown as a "!" badge instead of a colour change
+      const bang = k === 'new' && s.state === 'warn', vis = bang ? 'ok' : s.state;
+      return `<div class="api-wrap"><button type="button" class="pill api-pill ${esc(vis)}" data-k="${k}" data-state="${esc(vis)}" aria-expanded="${open}" aria-haspopup="true" aria-label="${label} API ${WORD[vis] || ''}${bang ? ' with problems' : ''}${s.tag ? ' (' + esc(s.tag) + ')' : ''}">`
         + `<i class="api-dot"></i><span>${label}<span class="api-w"> API</span></span></button>`
+        + (bang ? '<b class="api-bang" aria-hidden="true" title="Working, but with problems. Click for details.">!</b>' : '')
         + `<div class="api-pop"${open ? '' : ' hidden'}>${pop(k, label, s)}</div></div>`;
     }).join('');
     if (focused) { const b = root.querySelector(`[data-k="${focused}"]`); if (b) b.focus(); }
