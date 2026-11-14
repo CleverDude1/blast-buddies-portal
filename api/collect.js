@@ -16,16 +16,21 @@ import {
   CLAN_TRACKED,
 } from './_lib/sync.js';
 
+// the collector may call two APIs in one run; give Vercel more time (remove if your plan does not allow it)
+export const config = { maxDuration: 60 };
+
 const STORE_RAW = process.env.STORE_RAW !== 'false';
 
-// FALLBACK: when the combined (new) API does not deliver a board, that board is fetched straight from the game's own server,
-// the same addresses the old api/leaderboard-week.js, leaderboard-ranked.js and clan.js proxies used. Nothing on your own site is called,
-// so those three files (and the old daily one) no longer need to exist, which frees function slots.
-//   - there is no daily fallback: that address is gone, so a missing daily board just stays missing for that hour
-//   - a board can also set `fallbackUrl` in api/_sources/index.js to override the address below
+// FALLBACK: when the combined (new) API (api/pangolin-test.js) does not deliver a board, that board is fetched straight from the
+// game's own server, the same addresses the old per-board proxies used. Nothing on your own site is called, so the old
+// leaderboard-week.js, leaderboard-ranked.js and clan.js files are not needed for this.
+//   - the daily address follows the same pattern as weekly but is a best guess: if it does not exist, the daily board just
+//     stays missing for that hour (logged as a fallback error) and the next good snapshot still has the full day total
+//   - a board can set `fallbackUrl` in api/_sources/index.js to override the address below
 //   - set FALLBACK_ENABLED=false in Vercel to switch it off
 const FALLBACK_ENABLED = process.env.FALLBACK_ENABLED !== 'false';
 const FALLBACK_URLS = {
+  'leaderboard-day':    () => 'https://eu1-ping.blastbuddies.io/api/leaderboard/day',
   'leaderboard-week':   () => 'https://eu1-ping.blastbuddies.io/api/leaderboard/week',
   'leaderboard-ranked': (b) => `https://na1-ping.blastbuddies.io/api/leaderboard/ranked?season=${encodeURIComponent(b.season ?? 3)}`,
   'clan':               () => 'https://eu1-ping.blastbuddies.io/api/leaderboard/clans',
@@ -121,7 +126,7 @@ export default async function handler(req, res) {
   }
 
   // 1. Fetch the combined API
-  const results = await Promise.allSettled(SOURCES.map((s) => fetchJson(s.url)));
+  const results = await Promise.allSettled(SOURCES.map((s) => fetchJson(s.url, 2, 12000)));
 
   // 2. Cut it into boards, store raw slices, ingest
   for (let i = 0; i < SOURCES.length; i++) {
