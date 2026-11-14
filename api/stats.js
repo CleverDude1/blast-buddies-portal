@@ -13,6 +13,7 @@
 // /api/stats?mode=compare-players&a=ID&b=ID       -> lifetime stats, per-weapon kills and daily/weekly/ranked rows for two players
 // /api/stats?mode=compare-series&a=ID&b=ID        -> stored history of both players on the daily, weekly and ranked boards (graphs)
 // /api/stats?mode=backfill&key=ADMIN_KEY[&after=ID]  -> one-off: rebuild records + level 100 from stored raw_snapshots
+// /api/stats?mode=extension&clan=ID&rival=ID&player=ID[&since=ms]  -> Companion browser extension: clan/rival kills, last-hour gains, busiest hours
 // Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, STATS_ADMIN_KEY (only for backfill)
 import { rest, extractList, ID_RE } from './_lib/shared.js';
 import { loadStats, backfill, loadPeak, loadOnline, loadSamples, loadPlayers, backfillPlayers, roomTotals, addOnlineSample, updatePeak } from './_lib/records.js';
@@ -85,6 +86,61 @@ async function loadMonthlyKills() {
   } catch (e) { console.error('monthly kills failed:', e.message); return []; }
 }
 
+// ---- Companion browser extension helpers ----
+const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+const diff = (a, b) => (a == null || b == null) ? null : a - b;
+
+// newest stored snapshot of a board at or before ts (ms)
+async function snapshotAt(board, ts) {
+  const [row] = await rest(`raw_snapshots?select=fetched_at,payload&source=eq.${enc(SOURCE[board])}&fetched_at=lte.${enc(new Date(ts).toISOString())}&order=fetched_at.desc&limit=1`);
+  return row ? { at: Date.parse(row.fetched_at), payload: row.payload } : null;
+}
+// CHECK: these field names (clanId, monthlyKills / kills, tag, name) must match the stored 'clan' snapshot rows
+const clanRow = (snap, id) => (id && snap) ? ((extractList(snap.payload, 'clanId') || []).find(r => r.clanId === id) || null) : null;
+const clanKills = r => r ? ([r.monthlyKills, r.kills, r.totalKills, r.monthKills].map(num).find(v => v != null) ?? null) : null;
+// the player's kills on the daily board (only players inside the stored top rows are found)
+const playerKills = (snap, id) => {
+  const r = (id && snap) ? (extractList(snap.payload, 'playerId') || []).find(x => x.playerId === id) : null;
+  return r ? num(r.kills) : null;
+};
+
+// average online players per UTC hour over the last 14 days (stand-in for "busiest time")
+// CHECK: the sample time field (at / t / sampled_at / taken_at / created_at) and `total` must match loadSamples()
+async function busiestHours() {
+  const samples = await loadSamples(14), sum = Array(24).fill(0), n = Array(24).fill(0);
+  for (const s of samples || []) {
+    const t = Date.parse(s.at ?? s.t ?? s.sampled_at ?? s.taken_at ?? s.created_at), v = num(s.total);
+    if (isNaN(t) || v == null) continue;
+    const h = new Date(t).getUTCHours(); sum[h] += v; n[h]++;
+  }
+  return n.some(Boolean) ? sum.map((v, i) => n[i] ? Math.round(v / n[i]) : 0) : null;
+}
+
+async function extensionData({ clan, rival, player, since }) {
+  const [c, d] = await Promise.all([latestPayload('clan'), player ? latestPayload('day') : null]);
+  if (!c) return { error: 'no clan snapshot yet' };
+  const read = (cs, ds) => ({ mine: clanKills(clanRow(cs, clan)), rival: clanKills(clanRow(cs, rival)), player: playerKills(ds, player) });
+  const sinceTs = since ? Math.floor(since / 600e3) * 600e3 : 0;   // rounded to 10 min so the CDN can reuse responses
+  const [cPrev, dPrev, cSince, dSince] = await Promise.all([
+    snapshotAt('clan', c.at - 50 * 60e3),                          // the previous hourly snapshot
+    (player && d) ? snapshotAt('day', d.at - 50 * 60e3) : null,
+    sinceTs ? snapshotAt('clan', sinceTs) : null,
+    (sinceTs && player) ? snapshotAt('day', sinceTs) : null,
+  ]);
+  const now = read(c, d), prev = read(cPrev, dPrev);
+  const rm = clanRow(c, clan), rr = clanRow(c, rival);
+  return {
+    asOf: new Date(c.at).toISOString(),
+    mine: rm && now.mine != null ? { name: rm.name, tag: rm.tag, kills: now.mine } : null,
+    rival: rr && now.rival != null ? { name: rr.name, tag: rr.tag, kills: now.rival } : null,
+    player: now.player != null ? { kills: now.player } : null,
+    hour: { mine: diff(now.mine, prev.mine), rival: diff(now.rival, prev.rival), player: diff(now.player, prev.player) },
+    since: (sinceTs && cSince) ? read(cSince, dSince) : null,
+    byHour: await busiestHours().catch(() => null),
+    events: [],                                                     // level 100 / record alerts: later
+  };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   try {
@@ -110,6 +166,12 @@ export default async function handler(req, res) {
         await updatePeak(tot, at);
         return res.status(200).json({ ok: true, total: tot.total, na: tot.na, eu: tot.eu, as: tot.as, rooms: tot.rooms, league });
       } finally { clearTimeout(timer); }
+    }
+    if (req.query.mode === 'extension') {         // Companion browser extension
+      const clan = String(req.query.clan || ''), rival = String(req.query.rival || ''), player = String(req.query.player || '');
+      for (const id of [clan, rival, player]) if (id && !ID_RE.test(id)) return res.status(400).json({ error: 'bad id' });
+      res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+      return res.status(200).json(await extensionData({ clan, rival, player, since: Number(req.query.since) || 0 }));
     }
     if (req.query.mode === 'league') {            // clan league page
       res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
