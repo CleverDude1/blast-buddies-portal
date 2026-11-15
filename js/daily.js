@@ -1,9 +1,10 @@
 // ================= CONFIG =================
 // ONE request loads everything (daily, weekly, ranked seasons, clans). Switching tabs never calls the API again.
-// The snapshot is also cached in this browser for 5 minutes, so reloading or coming back to the page does not
-// use up the "1 request per 5 minutes per IP" budget. If you ever need to go through your own server instead,
-// change this to '/api/pangolin-test'.
-const API_URL = 'https://api.pangolinworks.dev/blast-buddies';
+// The snapshot is also cached in this browser for 5 minutes, so reloading or coming back to the page does not hammer the API.
+// MAIN API for now: api/board-new.js (the game's updated calls, one combined answer). The old API (api/board.js, through
+// /api/leaderboard-week etc.) is the BACKUP below. To go back to the combined Pangolin API, use 'https://api.pangolinworks.dev/blast-buddies'
+// (or '/api/pangolin-test' to go through your own server).
+const API_URL = '/api/board-new';
 const CACHE_KEY = 'bb-snapshot-v1';
 const CACHE_MS = 5 * 60 * 1000;
 const BOARD_N = 100;   // daily / weekly / clans show the top 100 (that is all the API publishes)
@@ -132,7 +133,12 @@ async function loadSnapshot() {
   if (snap && Date.now() - snapAt < CACHE_MS) return;
   let stored = null;
   try { stored = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { /* no usable cache */ }
-  if (stored && Date.now() - stored.at < CACHE_MS) { snap = stored.data; snapAt = stored.at; snapNote = stored.backup ? backupNote(snap) : ''; return; }
+  if (stored && Date.now() - stored.at < CACHE_MS) {
+    snap = stored.data; snapAt = stored.at;
+    const miss = Array.isArray(snap.metadata?.failed) ? snap.metadata.failed : [];
+    snapNote = stored.backup ? backupNote(snap) : (miss.length ? ` Some boards are not available from the API right now (${miss.join(', ')}).` : '');
+    return;
+  }
   const save = (data, backup) => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: snapAt, data, backup })); } catch (e) { /* too big for storage: memory cache still works */ } };
 
   // 1) the main API
@@ -149,7 +155,12 @@ async function loadSnapshot() {
   } catch (e) { primaryErr = e; primary = null; console.warn('Main API failed:', e); }
 
   // a good, fresh answer from the main API is used as is
-  if (primary && primary.metadata?.stale !== true) { snap = primary; snapAt = Date.now(); snapNote = ''; save(snap, false); return; }
+  if (primary && primary.metadata?.stale !== true) {
+    snap = primary; snapAt = Date.now(); save(snap, false);
+    const miss = Array.isArray(primary.metadata?.failed) ? primary.metadata.failed : [];
+    snapNote = miss.length ? ` Some boards are not available from the API right now (${miss.join(', ')}).` : '';
+    return;
+  }
 
   // 2) the backup API (also used when the main API says its data is stale)
   try {
