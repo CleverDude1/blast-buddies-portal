@@ -1,158 +1,151 @@
-// API health for the "New API" / "Old API" buttons in the top bar.
-//   /api/hourly?mode=status  ->  { generatedAt, new: {...}, old: {...} }
-//
-// "New API" = api/board-new.js, the main API for now. It is checked LIVE: a short request to each of the game's calls that board-new uses
-//   (daily, weekly, ranked, clans on na1-ping, with the player id; eu1-ping counts too, as board-new tries it as a second address).
-//   - ok   = all four answer with real rows        -> green
-//   - warn = only some answer                       -> still green on the button, with a "!" badge
-//   - down = none answer                            -> red
-//   The hourly collector is checked too (what api/collect.js wrote to collection_runs). If the live API works but the collection has
-//   problems, the state is "warn" (green with "!") and the reason says so.
-//
-// "Old API" = api/board.js, kept as it was: the game's older calls (eu1-ping / na1-ping, no player id). Also checked LIVE the same way.
-// The top bar script (js/status.js) turns the two into the button colours: yellow standby while the New API works, green when the
-// Old API has taken over (New down, Old answering), red when both are down.
-// Live checks are remembered for 2 minutes so visitors do not each hit the game's servers.
-// Env vars (Vercel): SUPABASE_URL, SUPABASE_SECRET_KEY, BB_PLAYER_ID (optional), RANKED_SEASON (optional, default 3)
-import { rest, extractList } from './shared.js';
+// Top bar: "New API" and "Old API" buttons.
+//   New API: green (soft glow) = in use and working, even if it has problems: then a small amber "!" badge shows on the button.
+//            red + glowing = not working.
+//   Old API: yellow (soft glow) = on standby while the New API works, GREEN = it has taken over because the New API is down,
+//            amber = it took over but only partly works, red + glowing = both APIs are down, grey = status not available.
+// Data: /api/hourly?mode=status (see api/_lib/status.js). Checked once a minute while the tab is open. Click a button for details.
+// The styles are injected from this file, so the buttons look right even if css/status.css is missing or overridden.
+// Preview without breaking anything: open any page with ?apitest=down (or warn / ok). Add &oldtest=ok|warn|down to preview the Old API's health.
+(() => {
+  const root = document.getElementById('apiStatus');
+  if (!root) return;
 
-const MIN = 60e3;
-const OK_MIN = 75;        // the collector runs at minute 55 every hour: a good run up to 75 minutes old is normal
-const DOWN_MIN = 150;     // no good run for this long = red
-const CRASH_MIN = 15;     // a run that started this long ago and never finished crashed or timed out
-const FINISHED = new Set(['ok', 'partial', 'failed']);
-const LEVEL = { ok: 0, warn: 1, down: 2 };
+  // Set ADMIN_ONLY to true to hide the buttons from visitors: open any page once with ?admin=1 and they show in that browser only.
+  const ADMIN_ONLY = false;
+  const params = new URLSearchParams(location.search);
+  try { if (params.get('admin') === '1') localStorage.setItem('bbAdmin', '1'); } catch (e) {}
+  if (ADMIN_ONLY) { let ok = false; try { ok = localStorage.getItem('bbAdmin') === '1'; } catch (e) {} if (!ok) return; }
+  const FORCE = params.get('apitest') || '';
+  const OLDFORCE = ['ok', 'warn', 'down'].includes(params.get('oldtest')) ? params.get('oldtest') : '';
 
-const iso = ms => (ms == null ? null : new Date(ms).toISOString());
-const text = v => String(v ?? '').slice(0, 220);
+  const CSS = `
+.api-status{display:flex;align-items:center;gap:8px}
+.api-wrap{position:relative}
+.api-pill{padding:0 14px;gap:9px;font-size:14px}
+.api-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#6b7360;flex:none}
+.api-pill.ok .api-dot{background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,.6)}
+.api-pill.ok{border-color:#4ade80 !important;animation:api-glow-g 3s ease-in-out infinite !important}
+.api-bang{position:absolute;top:-7px;right:-7px;width:19px;height:19px;border-radius:50%;background:#fbbf24;color:#1a1400;font-weight:800;font-size:13px;line-height:19px;text-align:center;box-shadow:0 0 8px rgba(251,191,36,.85);pointer-events:none;z-index:2}
+.api-pill.warn .api-dot{background:#fbbf24;box-shadow:0 0 6px rgba(251,191,36,.55)}
+.api-pill.standby{border-color:#fbbf24 !important;animation:api-glow-y 2.6s ease-in-out infinite !important}
+.api-pill.standby .api-dot{background:#fbbf24;box-shadow:0 0 8px #fbbf24}
+.api-pill.down{border-color:#ff4d4d !important;background:rgba(120,20,20,.55) !important;color:#fff !important;animation:api-glow 1.4s ease-in-out infinite !important}
+.api-pill.down .api-dot{background:#ff4d4d;box-shadow:0 0 8px #ff4d4d}
+@keyframes api-glow{0%,100%{box-shadow:0 0 4px 0 rgba(255,60,60,.4),inset 0 0 6px rgba(255,60,60,.3)}50%{box-shadow:0 0 18px 4px rgba(255,60,60,.9),inset 0 0 12px rgba(255,60,60,.6)}}
+@keyframes api-glow-g{0%,100%{box-shadow:0 0 3px 0 rgba(74,222,128,.25),inset 0 0 5px rgba(74,222,128,.15)}50%{box-shadow:0 0 13px 3px rgba(74,222,128,.6),inset 0 0 8px rgba(74,222,128,.3)}}
+@keyframes api-glow-y{0%,100%{box-shadow:0 0 3px 0 rgba(251,191,36,.3),inset 0 0 5px rgba(251,191,36,.2)}50%{box-shadow:0 0 14px 3px rgba(251,191,36,.7),inset 0 0 9px rgba(251,191,36,.4)}}
+@media(prefers-reduced-motion:reduce){
+  .api-pill.down{animation:none !important;box-shadow:0 0 12px 2px rgba(255,60,60,.8),inset 0 0 10px rgba(255,60,60,.5) !important}
+  .api-pill.standby{animation:none !important;box-shadow:0 0 10px 2px rgba(251,191,36,.6) !important}
+  .api-pill.ok{animation:none !important;box-shadow:0 0 9px 2px rgba(74,222,128,.55) !important}}
+.api-pop{position:absolute;right:0;top:52px;z-index:30;width:min(340px,86vw);background:var(--card,#161c11);border:1px solid var(--line,#2a3322);border-radius:12px;padding:14px 16px;text-align:left;color:var(--text,#f1efe6)}
+.api-pop[hidden]{display:none}
+.api-pop h4{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:15px}
+.api-tag{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;background:#2b3524;color:#cfd3c4}
+.api-tag.ok{background:#1d4a27;color:#8ff09b}.api-tag.warn,.api-tag.standby{background:#4a3a1d;color:#ffd98b}.api-tag.down{background:#4a1d1d;color:#ff9b9b}
+.api-pop p{margin-top:8px;font-size:13px;line-height:1.5;color:#cfd3c4}
+.api-pop dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:10px;font-size:13px}
+.api-pop dt{color:var(--muted,#9aa38c)}
+.api-pop dd{text-align:right;font-weight:600}
+.api-err{list-style:none;margin-top:10px;display:grid;gap:6px}
+.api-err li{background:#0b0f08;border-radius:8px;padding:8px 10px;font-size:12px;color:#ffb3b3;word-break:break-word}
+.api-err b{color:var(--text,#f1efe6)}
+.api-pop .api-note{margin-top:10px;font-size:11px;color:#7d8671}
+@media(max-width:800px){.api-pill{padding:0 10px}.api-w{display:none}}`;
+  if (!document.getElementById('api-status-css')) document.head.insertAdjacentHTML('beforeend', `<style id="api-status-css">${CSS}</style>`);
 
-// the hourly collection (what api/collect.js wrote to collection_runs)
-async function collectorStatus() {
-  const now = Date.now();
-  const rows = await rest('collection_runs?select=id,started_at,finished_at,status,errors,summary&order=started_at.desc&limit=12');
-  const runs = rows.map(r => ({
-    startedAt: Date.parse(r.started_at),
-    finishedAt: r.finished_at ? Date.parse(r.finished_at) : null,
-    status: FINISHED.has(r.status) ? r.status : null,                 // null = still running or never finished
-    errors: Array.isArray(r.errors) ? r.errors : [],
-    sources: r.summary?.sources || null,                                // { primary: [...], fallback: [...] } written by collect.js
-  }));
-  const finished = runs.filter(r => r.status), last = finished[0] || null;
-  const lastGood = finished.find(r => r.status === 'ok' || r.status === 'partial') || null;
-  const at = r => (r ? (r.finishedAt ?? r.startedAt) : null);
+  const KEYS = [['new', 'New'], ['old', 'Old']];
+  const WORD = { ok: 'working', warn: 'has problems', down: 'is not working', standby: 'is on standby', off: 'is not connected', unknown: 'status unavailable' };
+  const TAG = { ok: 'Working', warn: 'Problems', down: 'Down', standby: 'Standby', off: 'Not connected', unknown: 'Checking' };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ago = iso => { const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 6e4)); return m < 2 ? 'just now' : m < 90 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
+  const utc = iso => new Date(iso).toISOString().slice(11, 16) + ' UTC';
 
-  let state = 'ok', reason = 'The last hourly collection finished without errors.';
-  const bump = (s, why) => { if (LEVEL[s] > LEVEL[state]) { state = s; reason = why; } };
+  let data = null, failed = false, failCode = null, openKey = null, last = '';
 
-  if (!last) {
-    bump('warn', 'No collection run has finished yet.');
-  } else {
-    const sinceGood = lastGood ? (now - at(lastGood)) / MIN : Infinity;
-    if (last.status === 'failed') bump('down', 'The last collection failed: the API could not be fetched or its snapshot was stale.');
-    if (sinceGood > DOWN_MIN) bump('down', lastGood ? `No successful collection for ${Math.round(sinceGood / 60 * 10) / 10} hours.` : 'There has been no successful collection yet.');
-    else if (sinceGood > OK_MIN) bump('warn', `The last successful collection is ${Math.round(sinceGood)} minutes old (it normally runs every 60).`);
-    // errors with a "source" (and no "step") come from fetching the API itself: unreachable, stale, or boards missing from the answer
-    // (notes the collector marked "recovered" were fixed by the old-API fallback, so they no longer count against the new API's own check)
-    const apiErrs = last.errors.filter(e => e.source && !e.step);
-    const empty = apiErrs.filter(e => /board missing|empty/i.test(String(e.error ?? e.message)));
-    if (empty.length >= 3) bump('down', 'The API answered, but most of its boards were empty.');
-    else if (apiErrs.length && last.status !== 'failed') bump('warn', 'The API answered, but some of its boards were missing or stale.');
-    if (last.status === 'partial') bump('warn', 'The API answered, but some part of the collection reported errors.');
-    // collect.js records which API delivered each board. If the new API delivered none, it is down, even though the run itself
-    // may be saved as "partial" because the old-API backup stored the data
-    if (last.sources && Array.isArray(last.sources.primary) && last.sources.primary.length === 0)
-      bump('down', last.sources.fallback && last.sources.fallback.length
-        ? 'The collector\'s combined source delivered nothing in the last collection, so it used the direct game fallback instead.'
-        : 'The collector\'s combined source delivered nothing in the last collection.');
-    // a run that started long ago and never finished timed out or crashed: usually the API hanging, so this counts as down
-    const newest = runs[0];
-    if (newest && !newest.status && (now - newest.startedAt) / MIN > CRASH_MIN) bump('down', 'The newest collection run never finished: it crashed or timed out, usually because the API did not answer.');
+  function newState() {
+    if (['ok', 'warn', 'down'].includes(FORCE))
+      return { state: FORCE, title: 'Preview', reason: `Preview mode (?apitest=${FORCE}). This is not the real status.`, errors: [] };
+    if (failed) {
+      if (navigator.onLine === false) return { state: 'unknown', title: 'Offline', reason: 'Your browser looks offline, so the status could not be read.', errors: [] };
+      // the site's own API did not answer: the data is not flowing, so this is shown as down
+      return { state: 'down', title: 'Not working', reason: `The site's API did not answer${failCode ? ` (error ${failCode})` : ''}, so the status could not be read.`, errors: [] };
+    }
+    if (!data) return { state: 'unknown', title: 'Checking', reason: 'Checking the status...', errors: [] };
+    return data.new || { state: 'unknown', title: 'Checking', reason: 'No status for the New API yet.', errors: [] };
   }
 
-  return {
-    state,
-    title: state === 'ok' ? 'Working' : state === 'warn' ? 'Working with problems' : 'Not working',
-    reason,
-    lastRunAt: iso(at(last)), lastRunStatus: last?.status ?? null,
-    lastGoodAt: iso(at(lastGood)),
-    errors: (last?.errors || []).slice(0, 4).map(e => ({ where: e.step || e.source || 'run', message: text(e.error ?? e.message) })),
-  };
-}
+  // The Old API is the backup. Its button depends on the New API:
+  function oldState() {
+    const n = newState(), real = data && data.old;
+    // how healthy the old API itself is, as measured by the server (null = not measured)
+    const health = OLDFORCE ? { state: OLDFORCE } : (real && ['ok', 'warn', 'down'].includes(real.state) ? real : null);
+    const base = { lastRunAt: real?.lastRunAt, lastGoodAt: real?.lastGoodAt, errors: real?.errors || [] };
+    if (n.state === 'unknown') return { ...base, state: 'unknown', title: 'Checking', reason: 'Waiting for the New API status...' };
+    if (n.state === 'ok' || n.state === 'warn') {
+      const extra = health && health.state === 'down' ? ' Note: the Old API itself is not answering right now, so there is no backup at the moment.' : '';
+      return { ...base, state: 'standby', title: 'On standby',
+        reason: (n.state === 'ok'
+          ? 'Not needed right now: the New API is working. The Old API takes over automatically if it stops answering.'
+          : 'The New API has some problems. The Old API fills in any board it could not deliver.') + extra };
+    }
+    // the New API is down: the Old API is expected to be providing the data
+    if (!health) return { ...base, state: 'warn', tag: 'Unverified', title: 'Unverified',
+      reason: 'The New API is down, so the Old API should be providing the data, but its own status could not be confirmed.' };
+    if (health.state === 'ok') return { ...base, state: 'ok', tag: 'Active', title: 'Active',
+      reason: 'The New API is down, so the Old API has taken over and is providing the data.' };
+    if (health.state === 'warn') return { ...base, state: 'warn', tag: 'Problems', title: 'Problems',
+      reason: 'The New API is down and the Old API is only partly working, so some data may be missing.' };
+    return { ...base, state: 'down', tag: 'Down', title: 'Not working',
+      reason: 'Both the New API and the Old API are not working, so no new data is coming in.' };
+  }
+  const get = k => (k === 'new' ? newState() : oldState());
 
-// ---------- live checks of the game's servers ----------
-const PLAYER_ID = process.env.BB_PLAYER_ID || 'pEyooYhCf-xj', PIDQ = encodeURIComponent(PLAYER_ID);
-const SEASON = encodeURIComponent(process.env.RANKED_SEASON || 3);
-const NA = 'https://na1-ping.blastbuddies.io/api/leaderboard', EU = 'https://eu1-ping.blastbuddies.io/api/leaderboard';
-const SETS = {
-  // the calls api/board-new.js makes (any one of the addresses answering counts)
-  new: [
-    { name: 'Daily',  idKey: 'playerId', urls: [`${NA}/day?playerId=${PIDQ}`,    `${EU}/day?playerId=${PIDQ}`] },
-    { name: 'Weekly', idKey: 'playerId', urls: [`${NA}/week?playerId=${PIDQ}`,   `${EU}/week?playerId=${PIDQ}`] },
-    { name: 'Ranked', idKey: 'playerId', urls: [`${NA}/ranked?season=${SEASON}&playerId=${PIDQ}`, `${EU}/ranked?season=${SEASON}&playerId=${PIDQ}`] },
-    { name: 'Clans',  idKey: 'clanId',   urls: [`${NA}/clans`, `${EU}/clans`] },
-  ],
-  // the calls api/board.js (the old API) makes
-  old: [
-    { name: 'Daily',  idKey: 'playerId', urls: [`${EU}/day`] },
-    { name: 'Weekly', idKey: 'playerId', urls: [`${EU}/week`] },
-    { name: 'Ranked', idKey: 'playerId', urls: [`${NA}/ranked?season=${SEASON}`] },
-    { name: 'Clans',  idKey: 'clanId',   urls: [`${EU}/clans`] },
-  ],
-};
-const TTL = 2 * MIN, cache = {};
+  function pop(k, label, s) {
+    return `<h4>${label} API <span class="api-tag ${esc(s.state)}">${esc(s.tag || TAG[s.state] || '')}</span></h4><p>${esc(s.reason)}</p>`
+      + (s.lastRunAt ? `<dl><dt>Last collection</dt><dd>${ago(s.lastRunAt)} (${utc(s.lastRunAt)})</dd>`
+          + (s.lastGoodAt ? `<dt>Last success</dt><dd>${ago(s.lastGoodAt)} (${utc(s.lastGoodAt)})</dd>` : '') + '</dl>' : '')
+      + (s.errors && s.errors.length ? `<ul class="api-err">${s.errors.map(e => `<li><b>${esc(e.where)}</b>: ${esc(e.message)}</li>`).join('')}</ul>` : '')
+      + (k === 'new' ? '<p class="api-note">The main API. Checked live every minute; the hourly collection is checked too. Green with a ! means it works but something needs a look.</p>'
+        : '<p class="api-note">The backup API: yellow while the New API works, green when it has taken over.</p>');
+  }
 
-async function probeUrl(url, idKey) {
-  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), 6000);
-  try {
-    const r = await fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const list = extractList(await r.json(), idKey);
-    if (!Array.isArray(list) || !list.length) throw new Error('answered, but with no rows');
-    return null;
-  } catch (e) { return e.name === 'AbortError' ? 'no answer within 6 seconds' : String(e.message || e); }
-  finally { clearTimeout(timer); }
-}
-async function probeBoard(c) {                      // the first address that answers wins; otherwise the first address's error is reported
-  let firstErr = null;
-  for (const url of c.urls) { const err = await probeUrl(url, c.idKey); if (!err) return null; firstErr = firstErr || err; }
-  return firstErr;
-}
-async function liveCheck(which) {
-  if (cache[which] && Date.now() - cache[which].t < TTL) return cache[which].v;
-  const results = await Promise.all(SETS[which].map(async c => ({ c, err: await probeBoard(c) })));
-  const good = results.filter(x => !x.err).length, total = results.length;
-  const v = { state: good === total ? 'ok' : good > 0 ? 'warn' : 'down', good, total,
-    errors: results.filter(x => x.err).slice(0, 4).map(x => ({ where: x.c.name, message: text(x.err) })) };
-  cache[which] = { t: Date.now(), v };
-  return v;
-}
+  function render() {
+    const focused = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.k : null;
+    root.innerHTML = KEYS.map(([k, label]) => {
+      const s = get(k), open = openKey === k;
+      // the New API is green whenever it is the one in use, even with problems: those are shown as a "!" badge instead of a colour change
+      const bang = k === 'new' && s.state === 'warn', vis = bang ? 'ok' : s.state;
+      return `<div class="api-wrap"><button type="button" class="pill api-pill ${esc(vis)}" data-k="${k}" data-state="${esc(vis)}" aria-expanded="${open}" aria-haspopup="true" aria-label="${label} API ${WORD[vis] || ''}${bang ? ' with problems' : ''}${s.tag ? ' (' + esc(s.tag) + ')' : ''}">`
+        + `<i class="api-dot"></i><span>${label}<span class="api-w"> API</span></span></button>`
+        + (bang ? '<b class="api-bang" aria-hidden="true" title="Working, but with problems. Click for details.">!</b>' : '')
+        + `<div class="api-pop"${open ? '' : ' hidden'}>${pop(k, label, s)}</div></div>`;
+    }).join('');
+    if (focused) { const b = root.querySelector(`[data-k="${focused}"]`); if (b) b.focus(); }
+  }
 
-const TITLE = { ok: 'Working', warn: 'Working with problems', down: 'Not working' };
+  async function load() {
+    try {
+      const r = await fetch('/api/hourly?mode=status');
+      if (!r.ok) { const err = new Error('http'); err.status = r.status; throw err; }
+      data = await r.json(); failed = false; failCode = null;
+    } catch (e) { failed = true; failCode = e.status || null; }
+    const sig = JSON.stringify([data && [data.new, data.old], failed, failCode]);
+    if (sig !== last || openKey) { last = sig; render(); }   // re-draw only when something changed (or a details box is open, so its times stay fresh)
+  }
 
-async function newApi() {
-  const [live, coll] = await Promise.all([liveCheck('new'), collectorStatus().catch(() => null)]);
-  let state = live.state, reason;
-  if (live.state === 'ok') reason = 'The new API is answering for all four boards (daily, weekly, ranked, clans).';
-  else if (live.state === 'warn') reason = `Only ${live.good} of ${live.total} boards are answering from the new API.`;
-  else reason = 'None of the boards are answering from the new API.';
-  // the live API works but the hourly collection has trouble: still "working", with the "!" badge
-  if (live.state === 'ok' && coll && coll.state !== 'ok') { state = 'warn'; reason = `The new API is answering, but the hourly collection has problems: ${coll.reason}`; }
-  return {
-    state, title: TITLE[state], reason,
-    lastRunAt: coll?.lastRunAt ?? null, lastRunStatus: coll?.lastRunStatus ?? null, lastGoodAt: coll?.lastGoodAt ?? null,
-    errors: live.errors.length ? live.errors : (coll?.errors || []),
-  };
-}
+  root.addEventListener('click', e => {
+    const b = e.target.closest('[data-k]');
+    if (!b) return;
+    e.stopPropagation();
+    openKey = openKey === b.dataset.k ? null : b.dataset.k;
+    render();
+  });
+  document.addEventListener('click', e => { if (openKey && !e.target.closest('.api-wrap')) { openKey = null; render(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && openKey) { openKey = null; render(); } });
 
-async function oldApi() {
-  const live = await liveCheck('old');
-  const reason = live.state === 'ok' ? 'The old API (board.js) is answering for all four boards.'
-    : live.state === 'warn' ? `Only ${live.good} of ${live.total} boards are answering from the old API.` : 'None of the boards are answering from the old API.';
-  return { state: live.state, title: TITLE[live.state], reason, lastRunAt: null, lastRunStatus: null, lastGoodAt: null, errors: live.errors };
-}
-
-export async function apiStatus() {
-  const [n, o] = await Promise.allSettled([newApi(), oldApi()]);
-  const unknown = e => ({ state: 'unknown', title: 'Status unavailable', reason: text(e?.message || 'The status check failed.'), lastRunAt: null, lastRunStatus: null, lastGoodAt: null, errors: [] });
-  return { generatedAt: new Date().toISOString(), new: n.status === 'fulfilled' ? n.value : unknown(n.reason), old: o.status === 'fulfilled' ? o.value : unknown(o.reason) };
-}
+  render();
+  load();
+  setInterval(() => { if (!document.hidden) load(); }, 60000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
+})();
