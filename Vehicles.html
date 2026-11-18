@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vehicles</title>
+<style>
+:root{--bg:#e9e7da;--fg:#1c2014;--card:#f6f5ec;--mut:#6a6f58;--ln:#cfcdb8;--acc:#646c40;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14160e;--fg:#e8e7d6;--card:#1d2014;--mut:#9a9f86;--ln:#33372a;--acc:#9aa66a}}
+:root[data-theme="dark"]{--bg:#14160e;--fg:#e8e7d6;--card:#1d2014;--mut:#9a9f86;--ln:#33372a;--acc:#9aa66a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 "Trebuchet MS",Verdana,sans-serif}
+main{max-width:1080px;margin:0 auto;padding:20px 16px 40px}
+h1{font:700 34px/1 Georgia,serif;margin:0 0 4px}
+.sub{color:var(--mut);margin:0 0 14px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.wrap{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px}
+@media(max-width:760px){.wrap{grid-template-columns:1fr}}
+.view{position:relative;background:var(--card);border:1px solid var(--ln);border-radius:10px;height:460px;overflow:hidden}
+#c{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+.tools{position:absolute;left:10px;bottom:10px;display:flex;gap:6px}
+button{font:inherit;padding:6px 12px;border:1px solid var(--ln);background:var(--card);color:var(--fg);border-radius:6px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--acc)}
+button[aria-pressed=true]{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+.panel{background:var(--card);border:1px solid var(--ln);border-radius:10px;padding:2px 16px 12px}
+h2{font:700 16px Georgia,serif;margin:14px 0 4px;color:var(--acc)}
+.r{display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px dotted var(--ln)}
+.r span:first-child{color:var(--mut)}.r span:last-child{font-weight:700;text-align:right}
+.note{color:var(--mut);font-size:13px;margin-top:14px}
+</style></head><body><main>
+<h1>Vehicles</h1>
+<p class="sub">Models are built live from the game’s own code. Drag to rotate, scroll to zoom.</p>
+<div class="tabs" id="tabs"></div>
+<div class="wrap"><div class="view"><canvas id="c"></canvas>
+<div class="tools"><button id="bs" aria-pressed="true">Spin</button><button id="bw" aria-pressed="false">Wireframe</button></div></div>
+<div class="panel" id="st"></div></div>
+<p class="note">Colours and a few small parts are estimated, because some helper functions and palette constants were not in the pasted code.</p>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const G=(n,o)=>({name:n,...o});
+const D={
+BUGGY:{title:"Buggy",view:[14,2.2],seats:"Driver, Gunner, Passenger (all open)",maxHp:550,bulletDamageMultiplier:.6,explosiveDamageMultiplier:1,ejectDamage:35,ram:{minSpeed:5,fullSpeed:12,maxDamage:70},respawnSeconds:30,idleResetSeconds:60,strandedResetSeconds:5,enterRadius:4.2,caps:{maxSpeed:20,maxReverseSpeed:7,maxAccel:14,maxClimbSpeed:10,maxAngularSpeed:4},wheeled:{mass:750,wheelRadius:.8,suspensionStiffness:28,engineForce:9500,brakeForce:140,maxSteer:.5,frictionSlip:2.4,stepClimbHeight:1.1},guns:[G("Gunner gun",{damage:16,fireRate:10,range:150,heatPerShot:.07,coolPerSecond:.3,overheatResumeHeat:.4})]},
+TANK:{title:"Tank",view:[17,1.8],seats:"Driver (enclosed), Gunner (open)",maxHp:2000,bulletDamageMultiplier:.1,explosiveDamageMultiplier:1,ejectDamage:35,ram:{minSpeed:2,fullSpeed:6,maxDamage:150},respawnSeconds:30,idleResetSeconds:60,strandedResetSeconds:5,enterRadius:3.5,caps:{maxSpeed:10,maxReverseSpeed:5,maxAccel:8,maxClimbSpeed:6,maxAngularSpeed:2},tracked:{accel:4,brakeDecel:14,coastDecel:8,pivotTurnRate:1.1,cruiseTurnRate:.75,turnAccel:5,stepClimbHeight:1.1,maxPitch:.6},guns:[G("Main cannon (driver)",{damage:300,vehicleDamage:600,fireRate:.3333,range:220,"projectile.speed":70,"projectile.blastRadius":4.375}),G("Roof gun (gunner)",{damage:16,fireRate:10,range:150,heatPerShot:.07,coolPerSecond:.3,overheatResumeHeat:.4})]},
+HELICOPTER:{title:"Helicopter",view:[19,2.6],seats:"Pilot (enclosed), 2 door gunners, Passenger",maxHp:650,bulletDamageMultiplier:.7,explosiveDamageMultiplier:1,ejectDamage:35,respawnSeconds:30,idleResetSeconds:60,strandedResetSeconds:5,enterRadius:3.5,caps:{maxSpeed:25,maxReverseSpeed:25,maxAccel:14,maxClimbSpeed:8,maxAngularSpeed:3.2,ceiling:90},flight:{strafeSpeed:16,accel:12,hoverDecel:9,climbSpeed:8,descendSpeed:9,climbAccel:12,yawRate:2.2,maxPitch:.2,maxRoll:.24,spoolSeconds:1.5,driverlessDescentSpeed:6},guns:[G("Door gun (left and right)",{damage:14,fireRate:11,range:150,heatPerShot:.06,coolPerSecond:.3,overheatResumeHeat:.4}),G("Chin gun (pilot)",{damage:14,fireRate:9,range:160,heatPerShot:.07,coolPerSecond:.3,overheatResumeHeat:.4}),G("Rockets (pilot)",{damage:80,vehicleDamage:220,fireRate:3,range:200,magazine:6,reloadSeconds:7,"projectile.speed":60,"projectile.blastRadius":2})]},
+QUAD:{title:"Quad",view:[9,1.2],seats:"Driver, Passenger (open)",maxHp:300,bulletDamageMultiplier:.65,explosiveDamageMultiplier:1,ejectDamage:35,ram:{minSpeed:5,fullSpeed:14,maxDamage:60},respawnSeconds:30,idleResetSeconds:60,strandedResetSeconds:5,enterRadius:3.5,caps:{maxSpeed:22,maxReverseSpeed:7,maxAccel:16,maxClimbSpeed:10,maxAngularSpeed:5},wheeled:{mass:280,wheelRadius:.42,suspensionStiffness:30,engineForce:4200,brakeForce:60,maxSteer:.55,frictionSlip:2.4,stepClimbHeight:1.1},guns:[]}};
+const hum=k=>{k=k.replace(/\./g," ").replace(/([A-Z])/g," $1").toLowerCase();return k[0].toUpperCase()+k.slice(1)};
+const row=(k,v)=>`<div class="r"><span>${hum(k)}</span><span>${v}</span></div>`;
+const sec=(t,o)=>`<h2>${t}</h2>`+Object.entries(o).map(([k,v])=>row(k,v)).join("");
+function stats(d){const n=d.bulletDamageMultiplier;let h=sec("Durability",{maxHp:d.maxHp,bulletDamageMultiplier:n+"x",explosiveDamageMultiplier:d.explosiveDamageMultiplier+"x",effectiveHpVsBullets:Math.round(d.maxHp/n),ejectDamage:d.ejectDamage,...(d.ram?{ramMin:d.ram.minSpeed+" speed",ramMax:d.ram.maxDamage+" at speed "+d.ram.fullSpeed}:{})});
+h+=sec("Seats and lifecycle",{seats:d.seats,respawnSeconds:d.respawnSeconds,idleResetSeconds:d.idleResetSeconds,strandedResetSeconds:d.strandedResetSeconds,enterRadius:d.enterRadius});
+h+=sec("Speed limits",d.caps);h+=sec("Handling",d.wheeled||d.tracked||d.flight);
+for(const g of d.guns){const{name,...o}=g;if(o.damage&&o.fireRate)o.damagePerSecond=Math.round(o.damage*o.fireRate*10)/10;h+=sec(name,o)}return h}
+
+const T=THREE,V=new T.Group(),mats={};let P=V,spinners=[];
+const mat=c=>mats[c]||(mats[c]=new T.MeshStandardMaterial({color:c,roughness:.85,metalness:.1}));
+const put=(m,p,r)=>{m.position.set(...p);if(r)m.rotation.set(...r);P.add(m);return m};
+const box=(c,s,p,r)=>put(new T.Mesh(new T.BoxGeometry(...s),mat(c)),p,r);
+const rounded=(c,s,_r,p,r)=>box(c,s,p,r);
+const sphere=(c,p,r,sc=[1,1,1])=>{const m=put(new T.Mesh(new T.SphereGeometry(r,14,10),mat(c)),p);m.scale.set(...sc);return m};
+const link=(c,a,b,r1,r2,s)=>{const A=new T.Vector3(...a),B=new T.Vector3(...b),d=B.clone().sub(A),m=new T.Mesh(new T.CylinderGeometry(r2,r1,d.length(),s),mat(c));m.position.copy(A.clone().add(B).multiplyScalar(.5));m.quaternion.setFromUnitVectors(new T.Vector3(0,1,0),d.normalize());P.add(m);return m};
+const tube=(c,a,b,r,s=8)=>link(c,a,b,r,r,s);
+const cone=(c,a,b,r1,r2,s)=>link(c,a,b,r1,r2,s);
+const beam=(c,a,b,w1,w2)=>tube(c,a,b,(w1+w2)/4,4);
+const disc=(c,p,r,ax,h,s=10)=>put(new T.Mesh(new T.CylinderGeometry(r,r,h,s),mat(c)),p,ax=="x"?[0,0,Math.PI/2]:ax=="z"?[Math.PI/2,0,0]:null);
+const tapered=(c,[w,h,d],bs,ts,p)=>{const g=new T.CylinderGeometry(ts*.7071,bs*.7071,h,4);g.rotateY(Math.PI/4);g.scale(w,1,d);return put(new T.Mesh(g,mat(c)),p)};
+const star=(c,p,r,rot=[0,0,0])=>{const g=new T.CylinderGeometry(r,r,.02,5);g.rotateX(Math.PI/2);return put(new T.Mesh(g,mat(c)),p,rot)};
+const bone=n=>{P=new T.Group();P.name=n;V.add(P);return P};
+const wheel=(x,y,z,r,w,c,lugs=0,i=1)=>{const g=new T.Group();g.position.set(x,y,z);V.add(g);P=g;disc(c,[0,0,0],r,"x",w,12);
+ for(let a=0;a<lugs;a++){const l=a/lugs*Math.PI*2;box(c,[w*1.05,r*.2,r*.2],[0,r*Math.sin(l),r*Math.cos(l)],[l,0,0])}
+ disc(Ge,[i*(w/2+.01),0,0],r*.25,"x",.06,8);P=V};
+
+const Ko=0x646c40,ji=0x59613a,jn=0x3b4128,Yi=0x8a9460,Ge=0x2a2c27,Si=0x9aa09a,Fr=0xd8c25a,Fh=0xfff0b0,Sy=0xc03030,ar=0x1b1b1b,uf=0x9ed0e0,kP=0x25251f,PP=0x3a3d33,TP=0x333630,mf=0x777a6c,uc=0x5a5a48,pf=0xc9b458,jl=0x555a50;
+const glassM=new T.MeshStandardMaterial({color:uf,transparent:true,opacity:.3,roughness:.1});
+const glassBox=(s,p,r)=>put(new T.Mesh(new T.BoxGeometry(...s),glassM),p,r);
+const flags=(w,t)=>{for(const s of[-1,1]){disc(Yi,[w*s,t[0],t[1]],t[2],"x",.03,16);star(Fr,[(w+.017)*s,t[0],t[1]],t[2]*.78,[0,s*Math.PI/2,0])}};
+
+const B={
+BUGGY(){const Ry=1.32,Yl=.8,qi=2.4,Gr=3.1,IP=[[-1.55,1],[1.55,0]];
+ for(const[t]of IP){bone("axle");tube(Ge,[-1,Yl,t],[1,Yl,t],.13);sphere(Ge,[0,Yl,t],.3);for(const i of[-1,1])wheel(i*Ry,Yl,t,.76,.6,ar,8,i)}
+ bone("body");for(const t of[-1,1])box(Ge,[.22,.26,4.3],[.5*t,1.62,0]);
+ tapered(Ko,[1.6,.56,1.42],1.38,1,[0,1.48,0]);
+ for(const[t]of IP)for(const n of[-1,1]){tube(Si,[.82*n,1.7,.88*t],[.86*n,1,t],.05,6);box(jn,[.84,.1,1.18],[1.3*n,1.84,t])}
+ rounded(ji,[2.42,.62,4.62],0,[0,2.06,-.05]);tapered(ji,[2.16,.24,1.74],.88,.94,[0,2.49,-1.44]);box(jn,[.44,.05,1.3],[0,2.62,-1.5]);box(Yi,[1.88,.03,.3],[0,2.62,-.82]);
+ box(Ge,[1.24,.4,.06],[0,2.08,-2.37]);for(let t=0;t<5;t++)box(jn,[.07,.4,.06],[.24*t-.48,2.08,-2.395]);
+ box(Ko,[2.62,.28,.24],[0,1.82,-2.5]);box(Ko,[2.52,.24,.2],[0,1.84,2.36]);
+ for(const t of[-1,1]){disc(Fh,[.9*t,2.12,-2.37],.14,"z",.03,10);box(Sy,[.26,.12,.04],[.92*t,2.14,2.3]);tube(jl,[.5*t,1.94,-2.6],[.5*t,2.48,-2.56],.05,6);
+  box(Yi,[.02,.13,4.3],[1.212*t,2.27,-.05]);box(jn,[.1,.46,1.3],[1.16*t,1.55,0]);box(Ge,[.3,.06,1.2],[1.36*t,1.36,0]);
+  beam(ji,[.92*t,qi,-.58],[.86*t,Gr,-.18],.1,.12);beam(ji,[.92*t,qi,.86],[.9*t,Gr,.82],.12,.14);box(ji,[.12,.46,1.5],[1.15*t,2.58,1.52]);tube(Ko,[.95*t,qi,1],[.95*t,3.5,1],.07,6)}
+ flags(1.215,[2.06,.32,.27]);tube(Ko,[-.95,3.5,1],[.95,3.5,1],.07,6);rounded(ji,[1.98,.14,1.2],0,[0,Gr,.32]);box(Ge,[.6,.62,.14],[-.38,qi+.22,.6]);box(Ge,[.6,.62,.14],[.38,qi+.22,.6]);
+ box(ji,[2.42,.46,.12],[0,2.58,2.24]);box(Ge,[2.1,.04,1.4],[0,2.38,1.55]);star(Fr,[0,2.58,2.325],.12);
+ bone("glass");glassBox([1.72,.84,.04],[0,2.77,-.39],[.5,0,0]);for(const t of[-1,1])glassBox([.04,.7,1.15],[.9*t,2.75,.3]);glassBox([1.72,.7,.04],[0,2.75,.86]);
+ bone("gun");box(Ge,[.3,.3,.6],[0,3.57,1]);tube(Ge,[0,3.58,.7],[0,3.58,-.5],.06);tube(Si,[0,3.58,-.5],[0,3.58,-.7],.09);
+ for(const t of[-1,1])box(jn,[.4,.44,.04],[.33*t,3.51,.83],[0,.3*-t,0])},
+TANK(){const yf=.5,k1=.2,R1=2.45;
+ for(const n of[-1,1]){const r=1.32*n;bone("track");box(kP,[.62,.9,5.2],[r,yf,0]);box(Ge,[.248,.22,4.4],[r,.83,0]);
+  for(const z of[-1.8,-.9,0,.9,1.8])wheel(r,.4,z,.46,.4,PP,0,n);wheel(r,yf,-2.4,.5,.4,Si,0,n);wheel(r,yf,2.4,.5,.4,Si,0,n)}
+ bone("body");tapered(jn,[2,.62,4.9],1.08,1.04,[0,.82,0]);tapered(ji,[3.36,.46,5.4],.95,.9,[0,1.3,.05]);
+ rounded(ji,[3,.5,.9],0,[0,1.06,-2.56],[-.62,0,0]);rounded(Ge,[2.4,.22,.24],0,[0,.72,-2.72]);box(Ge,[2.4,.2,.2],[0,.72,2.74]);
+ for(const n of[-1,1]){rounded(jn,[.1,.44,4.8],0,[1.66*n,.98,0]);box(Yi,[.03,.14,4.7],[1.716*n,1.12,0]);tube(Ge,[1.2*n,1.4,-2.66],[1.2*n,1.4,-2.88],.16);disc(Fh,[1.2*n,1.4,-2.89],.12,"z",.03,8);box(Sy,[.22,.12,.06],[1.42*n,1.36,2.77]);box(Ge,[.9,.05,.62],[.7*n,1.55,2.12])}
+ bone("turret");rounded(ji,[2.5,.9,2.9],0,[0,2,.25]);tapered(jn,[2.6,.2,3],.92,.94,[0,1.62,.25]);box(Yi,[1.1,.04,.6],[.3,2.455,1.2]);flags(1.255,[2,-.1,.4]);
+ box(Ge,[1.9,.05,.42],[0,1.8,1.9]);tube(jn,[0,R1,k1],[0,2.58,k1],.44,12);tube(ji,[0,2.6,k1],[0,R1+.22,k1],.38,12);
+ tube(Ge,[-.8,R1,1.25],[-.8,4.15,1.25],.03,5);
+ bone("barrel");rounded(jn,[1.15,.66,.6],0,[0,2,-1.12]);tube(ji,[0,2,-1.3],[0,2,-3.95],.17,10);tube(jn,[0,2,-2.3],[0,2,-2.95],.25,10);tube(TP,[0,2,-3.5],[0,2,-3.72],.185,10);rounded(Ge,[.54,.4,.56],0,[0,2,-4.12]);
+ box(Ge,[.3,.3,.5],[0,R1+.2,k1-.3]);tube(Ge,[0,R1+.21,k1-.5],[0,R1+.21,k1-1.4],.05)},
+HELICOPTER(){const Ty=3.3,Ay=1.2,Iy=1.05;
+ bone("body");rounded(ji,[2.1,.3,2.55],0,[0,.95,.42]);rounded(ji,[2.1,.25,2.55],0,[0,2.4,.42]);rounded(ji,[2.1,1.4,.2],0,[0,1.65,1.6]);rounded(jn,[1.7,.42,2],0,[0,.95,-1.15]);rounded(jn,[1.7,.5,2.4],0,[0,.66,.45]);
+ rounded(Yi,[2.16,.2,2.2],0,[0,1.12,.5]);rounded(jn,[1.4,.66,2.3],0,[0,2.65,.45]);tube(Si,[0,2.9,0],[0,Ty,0],.13);
+ cone(ji,[0,1.85,1.4],[0,2.3,6.1],.52,.2,10);tube(Yi,[0,2.07,3.6],[0,2.1,4.05],.385,10);box(ji,[.12,1.35,1.1],[0,2.8,5.95]);box(jn,[1.9,.08,.5],[0,2.2,5.45]);
+ for(const t of[-1,1]){star(Fr,[.42*t,2.02,3],.26,[0,t*Math.PI/2,0]);box(Ko,[.04,.34,1.5],[.87*t,.74,.5]);tube(Ge,[t,1.1,Iy],[t,1.7,Iy],.05,6);tube(Ge,[t*1.05,1.7,Iy],[t*1.9,1.7,Iy],.05,6);tube(Ge,[Ay*t,1.25,-.1],[Ay*t,1.25,-1.1],.2,8)}
+ rounded(jn,[2*(Ay+.45),.12,.7],0,[0,1.25,.2]);tube(Si,[0,.6,-2.5],[0,.6,-3.1],.06,6);sphere(Ge,[0,.6,-2],.22);
+ bone("glass");sphere(uf,[0,1.72,-1.42],1,[.97,.98,1.12]).material=glassM;
+ bone("skids");for(const t of[-1,1]){const n=1.08*t;tube(Ge,[n,.08,-1.45],[n,.08,1.5],.075,6);tube(Ge,[n,.08,-1.45],[n,.32,-1.85],.075,6);for(const i of[-.85,.85])tube(Si,[n,.08,i],[.72*t,.85,i],.06,6)}
+ bone("mainRotor");spinners.push(P);box(Ge,[.7,.26,.7],[0,Ty+.05,0]);
+ for(let t=0;t<4;t++){const n=t/4*Math.PI*2,i=s=>[Math.cos(n)*s,3.38,-Math.sin(n)*s];box(Ge,[3.6,.07,.4],i(2.05),[0,n,0]);box(pf,[.55,.08,.41],i(4.1),[0,n,0])}
+ bone("tailRotor");tube(Ge,[.12,2.85,6.25],[.42,2.85,6.25],.08,6);box(jn,[.05,1.5,.2],[.36,2.85,6.25]);box(jn,[.05,.2,1.5],[.36,2.85,6.25])},
+QUAD(){const vf=.72,Hh=.42,Ly=[[-.85,1],[.85,0]],ql=1;
+ for(const[e]of Ly){tube(Ge,[-.6,Hh,e],[.6,Hh,e],.07,6);for(const n of[-1,1])wheel(n*vf,Hh,e,.38,.3,ar,6,n)}
+ bone("body");rounded(Ge,[.62,.34,1.5],0,[0,.5,0]);rounded(ji,[.88,.42,2.3],0,[0,.82,.02]);
+ for(const e of[-1,1]){for(const[t]of Ly){rounded(jn,[.5,.1,1],0,[e*vf,.93,t]);box(jn,[.3,.08,.6],[.5*e,.9,t]);tube(Si,[.4*e,.86,t],[.56*e,.5,t],.06,6)}
+  disc(Yi,[.445*e,.84,-.3],.19,"x",.03,12);star(Fr,[.462*e,.84,-.3],.15,[0,e*Math.PI/2,0]);disc(Fh,[.14*e,1.1,-1.175],.08,"z",.03,8);tube(Ge,[.36*e,.8,1.12],[.36*e,ql,1.48],.035,5)}
+ tapered(ji,[.78,.3,.84],.8,.7,[0,1.16,-.64]);box(Yi,[.24,.02,.56],[0,1.315,-.58]);rounded(jn,[.54,.22,.18],0,[0,1.1,-1.08]);
+ tube(Ge,[0,1.24,-.5],[0,1.5,-.55],.04,6);tube(Ge,[-.42,1.5,-.55],[.42,1.5,-.55],.035,6);rounded(ar,[.56,.16,1.4],0,[0,1.1,.5]);
+ tube(Ko,[-.44,.76,-1.26],[.44,.76,-1.26],.07,8);box(Ge,[.84,.05,.44],[0,ql,1.34]);box(uc,[.34,.22,.3],[.2,1.215,1.34]);box(Sy,[.4,.1,.05],[0,.92,1.19]);tube(Ge,[.4,ql,1.53],[.4,2.33,1.24],.015,4)}};
+
+const scene=new T.Scene(),ground=new T.Mesh(new T.CircleGeometry(12,48),new T.MeshStandardMaterial({color:0x3a3f2c,roughness:1}));ground.rotation.x=-Math.PI/2;
+scene.add(ground,V,new T.HemisphereLight(0xffffff,0x555544,.9));const sun=new T.DirectionalLight(0xffffff,.9);sun.position.set(6,10,8);scene.add(sun);
+let cur,view=[14,2.2],wire=false;
+function show(k){cur=k;V.clear();P=V;spinners=[];B[k]();view=D[k].view;rad=view[0];if(wire)Object.values(mats).forEach(m=>m.wireframe=true);
+ document.getElementById("st").innerHTML=stats(D[k]);document.querySelectorAll("#tabs button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.k==k))}
+document.getElementById("tabs").innerHTML=Object.keys(D).map(k=>`<button data-k="${k}">${D[k].title}</button>`).join("");
+document.getElementById("tabs").onclick=e=>{if(e.target.dataset.k)show(e.target.dataset.k)};
+
+const cv=document.getElementById("c"),R=new T.WebGLRenderer({canvas:cv,antialias:true,alpha:true}),cam=new T.PerspectiveCamera(40,1,.1,100);
+let th=.8,ph=1.15,rad=14,spin=true,drag=null;
+const fit=()=>{const r=cv.parentNode.getBoundingClientRect();R.setPixelRatio(Math.min(devicePixelRatio,2));R.setSize(r.width,r.height,false);cam.aspect=r.width/r.height;cam.updateProjectionMatrix()};
+new ResizeObserver(fit).observe(cv.parentNode);fit();
+cv.addEventListener("pointerdown",e=>{drag=[e.clientX,e.clientY];cv.setPointerCapture(e.pointerId)});
+cv.addEventListener("pointermove",e=>{if(!drag)return;th-=(e.clientX-drag[0])*.01;ph=Math.max(.2,Math.min(1.5,ph-(e.clientY-drag[1])*.01));drag=[e.clientX,e.clientY]});
+cv.addEventListener("pointerup",()=>drag=null);
+cv.addEventListener("wheel",e=>{e.preventDefault();rad=Math.max(5,Math.min(34,rad+e.deltaY*.01))},{passive:false});
+const bs=document.getElementById("bs"),bw=document.getElementById("bw");
+bs.onclick=()=>{spin=!spin;bs.setAttribute("aria-pressed",spin)};
+bw.onclick=()=>{wire=!wire;bw.setAttribute("aria-pressed",wire);Object.values(mats).forEach(m=>m.wireframe=wire)};
+show("BUGGY");
+(function loop(){if(spin&&!drag)th+=.006;spinners.forEach(s=>s.rotation.y+=.25);cam.position.set(rad*Math.sin(ph)*Math.sin(th),rad*Math.cos(ph)+view[1],rad*Math.sin(ph)*Math.cos(th));cam.lookAt(0,view[1],0);R.render(scene,cam);requestAnimationFrame(loop)})();
+</script></body></html>
