@@ -16,13 +16,13 @@ import {
   CLAN_TRACKED,
 } from './_lib/sync.js';
 
-// the collector may call two APIs in one run; give Vercel more time (remove if your plan does not allow it)
+// the collector may call several APIs in one run; give Vercel more time (remove if your plan does not allow it)
 export const config = { maxDuration: 60 };
 
 const STORE_RAW = process.env.STORE_RAW !== 'false';
 
-// FALLBACK: when the combined (new) API (api/pangolin-test.js) does not deliver a board, that board is fetched straight from the
-// game's own server, the same addresses the old per-board proxies used. Nothing on your own site is called, so the old
+// LAST-RESORT FALLBACK: when none of the SOURCES (Pangolin, then board-new) delivers a board, that board is fetched straight
+// from the game's own server, the same addresses the old per-board proxies used. Nothing on your own site is called, so the old
 // leaderboard-week.js, leaderboard-ranked.js and clan.js files are not needed for this.
 //   - the daily address follows the same pattern as weekly but is a best guess: if it does not exist, the daily board just
 //     stays missing for that hour (logged as a fallback error) and the next good snapshot still has the full day total
@@ -89,12 +89,12 @@ export default async function handler(req, res) {
   const lifetime = new Map();   // playerId -> lifetime stats + per-weapon kills (saved to player_lifetime / player_weapon_stats)
   const entriesBySource = [];
   const boards = []; // used by the records step
-  const got = new Set();        // board keys that were stored this run (from the new API or the fallback)
-  const via = {};               // board key -> 'primary' | 'fallback'
+  const got = new Set();        // board keys that were stored this run (from any source)
+  const via = {};               // board key -> 'primary' | 'backup' | 'fallback'
   let fetchedOk = 0;
-  let bundle = null;            // the whole Pangolin response (clan archives are read from it)
+  let bundle = null;            // a whole bundle response (clan archives are read from it)
 
-  // Store one board: raw snapshot + feed it to the ingest step. Used for both the new API and the fallback,
+  // Store one board: raw snapshot + feed it to the ingest step. Used for every source and the fallback,
   // so a board is only ever stored when it holds real rows (an empty or error response is never saved as a snapshot).
   async function accept(b, season, top, status, how) {
     // Same shape the old APIs returned ({ data: { top: [...] } }), so records.js and the diffs don't change.
@@ -125,39 +125,40 @@ export default async function handler(req, res) {
     }
   }
 
-  // 1. Fetch the combined API
-  const results = await Promise.allSettled(SOURCES.map((s) => fetchJson(s.url, 2, 12000)));
-
-  // 2. Cut it into boards, store raw slices, ingest
-  for (let i = 0; i < SOURCES.length; i++) {
+  // 1+2. Try each source in order (Pangolin first, then board-new). Stop as soon as every board is stored.
+  // Each source is cut into boards; a board already stored from an earlier source is never stored twice.
+  for (let i = 0; i < SOURCES.length && got.size < BOARDS.length; i++) {
     const s = SOURCES[i];
-    const r = results[i];
-    if (r.status === 'rejected') {
-      errors.push({ source: s.key, error: String(r.reason?.message || r.reason) });
+    let r;
+    try {
+      r = await fetchJson(s.url, 2, 12000);
+    } catch (e) {
+      errors.push({ source: s.key, error: String(e?.message || e) });
       continue;
     }
-    const { json, status } = r.value;
+    const { json, status } = r;
     if (json?.metadata?.stale === true) {
       errors.push({ source: s.key, error: 'upstream snapshot is stale, skipped' });
       continue;
     }
     fetchedOk++;
-    bundle = json;
+    if (!bundle?.clans?.archives) bundle = json;   // keep the bundle that has the clan archives
 
     for (const b of BOARDS) {
+      if (got.has(b.key)) continue;
       const top = b.pick(json);
       if (!Array.isArray(top) || !top.length) {
-        errors.push({ source: b.key, error: 'board missing or empty in bundle' });
+        errors.push({ source: s.key, board: b.key, error: 'board missing or empty in bundle' });
         continue;
       }
       const season = b.board === 'ranked'
         ? (json.ranked?.current?.season ?? json.metadata?.currentSeason ?? b.season)
         : b.season;
-      await accept(b, season, top, status, 'primary');
+      await accept(b, season, top, status, i === 0 ? 'primary' : 'backup');
     }
   }
 
-  // 2b. Fallback: every board the new API did not deliver is fetched from the old per-board API
+  // 2b. Last resort: every board no source delivered is fetched from the game's own per-board server
   if (FALLBACK_ENABLED) {
     const missing = BOARDS.filter((b) => !got.has(b.key) && fallbackUrlFor(b));
     if (missing.length) {
@@ -177,12 +178,18 @@ export default async function handler(req, res) {
         }
       }
     }
-    // a "board missing" note for a board the fallback then stored is kept in the log but no longer counts as a failure
-    errors.forEach((e) => { if (!e.step && got.has(e.source)) e.recovered = true; });
-    // if every board ended up stored, the whole-fetch failure notes are recovered too
-    if (got.size === BOARDS.length) errors.forEach((e) => { if (!e.step) e.recovered = true; });
   }
-  summary.sources = { primary: Object.keys(via).filter((k) => via[k] === 'primary'), fallback: Object.keys(via).filter((k) => via[k] === 'fallback') };
+
+  // A note about a board that a later source (or the fallback) then stored is kept in the log but no longer counts as a failure.
+  errors.forEach((e) => { if (!e.step && e.board && got.has(e.board)) e.recovered = true; });
+  // If every board ended up stored, the whole-fetch failure notes (a source that was down) are recovered too.
+  if (got.size === BOARDS.length) errors.forEach((e) => { if (!e.step) e.recovered = true; });
+
+  summary.sources = {
+    primary: Object.keys(via).filter((k) => via[k] === 'primary'),
+    backup: Object.keys(via).filter((k) => via[k] === 'backup'),
+    fallback: Object.keys(via).filter((k) => via[k] === 'fallback'),
+  };
 
   // 3. Change-detect + store
   const step = async (name, fn) => {
@@ -197,8 +204,8 @@ export default async function handler(req, res) {
     }));
 
   await step('lifetime', () => saveLifetime(db, lifetime, now));
-  // clan archives only come with the combined API, so this is skipped when only the fallback ran
-  if (bundle) await step('monthlyKills', () => saveMonthlyKills(db, bundle?.clans?.archives, now));
+  // clan archives only come with the combined (Pangolin) API, so this is skipped when only the backup or fallback ran
+  if (bundle?.clans?.archives) await step('monthlyKills', () => saveMonthlyKills(db, bundle.clans.archives, now));
 
   for (const { s, entries } of entriesBySource) {
     await step(`board:${s.key}`, () =>
@@ -223,22 +230,4 @@ export default async function handler(req, res) {
     const nowMs = Date.parse(now), items = [];
     for (const { b, payload } of boards) {
       let prev = null;
-      try { prev = await hourAgo(b.url, nowMs); } catch (e) { /* no earlier snapshot: the 1-hour gains are skipped for this board */ }
-      items.push({ board: b.board, payload, at: nowMs, prevPayload: prev?.payload, prevAt: prev?.at });
-    }
-    await commitRecords(collectRecords(items), nowMs);
-    let performance = null;
-    try { performance = await commitPerformance(collectPerformance(items)); }   // a failure here never blocks the Statistics records
-    catch (e) { errors.push({ step: 'performance', error: e.message }); }
-    return { boards: items.length, performance };
-  });
-
-  // 4. Close out the run
-  const real = errors.filter((e) => !e.recovered);
-  const status = real.length === 0 ? 'ok' : got.size > 0 ? 'partial' : 'failed';
-  await db.from('collection_runs')
-    .update({ finished_at: new Date().toISOString(), status, summary, errors })
-    .eq('id', run.id);
-
-  return res.status(status === 'failed' ? 500 : 200).json({ runId: run.id, status, summary, errors });
-}
+      try { prev = await hourAgo(b.url,
