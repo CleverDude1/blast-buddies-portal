@@ -1,15 +1,20 @@
 // ================= CONFIG =================
 // ONE request loads everything (daily, weekly, ranked seasons, clans). Switching tabs never calls the API again.
 // The snapshot is also cached in this browser for 5 minutes, so reloading or coming back to the page does not hammer the API.
-// MAIN API for now: api/board-new.js (the game's updated calls, one combined answer). The old API (api/board.js, through
-// /api/leaderboard-week etc.) is the BACKUP below. To go back to the combined Pangolin API, use 'https://api.pangolinworks.dev/blast-buddies'
-// (or '/api/pangolin-test' to go through your own server).
-const API_URL = '/api/board-new';
-const CACHE_KEY = 'bb-snapshot-v1';
+// The page tries these APIs in order and uses the first one that answers with real, fresh data:
+//   1) the combined Pangolin API (it allows 1 request per 5 minutes per IP, which matches the cache below)
+//   2) api/board-new.js on your own server (the game's updated calls, same shape as the Pangolin answer)
+//   3) the old per-board APIs on your own server (BACKUP below)
+// If the browser blocks the Pangolin address (CORS error in the console), change its url to '/api/pangolin-test'.
+const API_SOURCES = [
+  { key: 'pangolin',  label: 'Pangolin API', url: 'https://api.pangolinworks.dev/blast-buddies' },
+  { key: 'board-new', label: 'board-new API', url: '/api/board-new' },
+];
+const CACHE_KEY = 'bb-snapshot-v2';   // v2: the saved copy now remembers which API it came from
 const CACHE_MS = 5 * 60 * 1000;
 const BOARD_N = 100;   // daily / weekly / clans show the top 100 (that is all the API publishes)
 
-// BACKUP: if the main API does not answer (error, rate limit, no answer within TIMEOUT_MS, stale or empty data), the page is built from the
+// BACKUP: if none of the APIs above answers (error, rate limit, no answer within TIMEOUT_MS, stale or empty data), the page is built from the
 // old per-board APIs on your own server instead. /api/leaderboard-week returns the weekly AND daily boards together.
 // The backup has no clan history and may lack some player details (weapons, lifetime stats).
 const API_TIMEOUT_MS = 10000;
@@ -125,54 +130,71 @@ async function loadBackup() {
   if (!hasBoards(out)) throw new Error('the backup API returned nothing');
   return out;
 }
-const backupNote = s => ' Using the backup API because the main API did not respond.'
+const backupNote = s => ' Using the backup API because the other APIs did not respond.'
   + (s.metadata?.dailyEstimated ? ' Daily is estimated from the weekly board.' : (s.leaderboards?.daily ? '' : ' The daily board is not available right now.'))
   + ' Some player details (weapons, lifetime stats) may be missing.';
+
+// the note under the table: which API was used (if not the first choice) and which boards are missing
+function noteFor(via, s) {
+  if (via === 'backup') return backupNote(s);
+  const miss = Array.isArray(s.metadata?.failed) ? s.metadata.failed : [];
+  const used = API_SOURCES.find(x => x.key === via);
+  const first = API_SOURCES[0];
+  return (used && used !== first ? ` Using the ${used.label} because the ${first.label} did not respond.` : '')
+    + (miss.length ? ` Some boards are not available from the API right now (${miss.join(', ')}).` : '');
+}
+
+// one request to one of the combined APIs
+async function fetchMain(src) {
+  const res = await fetchLimited(src.url);
+  if (res.status === 429) {
+    const wait = Number(res.headers.get('Retry-After')) || 300;
+    throw new Error(`rate limited, try again in about ${Math.ceil(wait / 60)} min`);
+  }
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  if (!hasBoards(json)) throw new Error('the API returned no leaderboards');
+  return json;
+}
 
 async function loadSnapshot() {
   if (snap && Date.now() - snapAt < CACHE_MS) return;
   let stored = null;
   try { stored = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) { /* no usable cache */ }
   if (stored && Date.now() - stored.at < CACHE_MS) {
-    snap = stored.data; snapAt = stored.at;
-    const miss = Array.isArray(snap.metadata?.failed) ? snap.metadata.failed : [];
-    snapNote = stored.backup ? backupNote(snap) : (miss.length ? ` Some boards are not available from the API right now (${miss.join(', ')}).` : '');
+    snap = stored.data; snapAt = stored.at; window.BB_SOURCE = stored.via || null;
+    snapNote = noteFor(stored.via, snap);
     return;
   }
-  const save = (data, backup) => { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: snapAt, data, backup })); } catch (e) { /* too big for storage: memory cache still works */ } };
+  const use = (data, via) => {
+    snap = data; snapAt = Date.now(); snapNote = noteFor(via, data); window.BB_SOURCE = via;
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: snapAt, data, via })); } catch (e) { /* too big for storage: memory cache still works */ }
+  };
 
-  // 1) the main API
-  let primary = null, primaryErr = null;
-  try {
-    const res = await fetchLimited(API_URL);
-    if (res.status === 429) {
-      const wait = Number(res.headers.get('Retry-After')) || 300;
-      throw new Error(`rate limited, try again in about ${Math.ceil(wait / 60)} min`);
-    }
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    primary = await res.json();
-    if (!hasBoards(primary)) throw new Error('the API returned no leaderboards');
-  } catch (e) { primaryErr = e; primary = null; console.warn('Main API failed:', e); }
-
-  // a good, fresh answer from the main API is used as is
-  if (primary && primary.metadata?.stale !== true) {
-    snap = primary; snapAt = Date.now(); save(snap, false);
-    const miss = Array.isArray(primary.metadata?.failed) ? primary.metadata.failed : [];
-    snapNote = miss.length ? ` Some boards are not available from the API right now (${miss.join(', ')}).` : '';
-    return;
+  // 1) the combined APIs, in order. A stale answer is kept aside and only used if nothing better is found.
+  let stale = null, lastErr = null;
+  for (const src of API_SOURCES) {
+    try {
+      const json = await fetchMain(src);
+      if (json.metadata?.stale === true) {
+        stale = stale || { json, via: src.key };
+        lastErr = new Error(`${src.label} data is stale`);
+        continue;
+      }
+      use(json, src.key);
+      return;
+    } catch (e) { lastErr = e; console.warn(`${src.label} failed:`, e); }
   }
 
-  // 2) the backup API (also used when the main API says its data is stale)
-  try {
-    const b = await loadBackup();
-    snap = b; snapAt = Date.now(); snapNote = backupNote(b); save(b, true); return;
-  } catch (be) { console.warn('Backup API failed:', be); }
+  // 2) the old per-board APIs on your server
+  try { use(await loadBackup(), 'backup'); return; }
+  catch (be) { console.warn('Backup API failed:', be); }
 
-  // 3) both failed: stale main data is better than nothing, then the last saved copy
-  if (primary) { snap = primary; snapAt = Date.now(); snapNote = ''; save(snap, false); return; }
-  if (!snap && stored) { snap = stored.data; snapAt = stored.at; }
-  if (!snap) throw primaryErr || new Error('no data available');
-  snapNote = ` (couldn't refresh: ${primaryErr?.message}. Showing the last saved data.)`;
+  // 3) everything failed: stale data is better than nothing, then the last saved copy
+  if (stale) { use(stale.json, stale.via); snapNote += ' The APIs only returned stale data.'; return; }
+  if (!snap && stored) { snap = stored.data; snapAt = stored.at; window.BB_SOURCE = stored.via || null; }
+  if (!snap) throw lastErr || new Error('no data available');
+  snapNote = ` (couldn't refresh: ${lastErr?.message}. Showing the last saved data.)`;
 }
 
 // ---- pull the pieces out of the snapshot ----
