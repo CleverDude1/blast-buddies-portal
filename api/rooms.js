@@ -1,3 +1,4 @@
+
 export default async function handler(req, res) {
     if (req.method !== "GET") {
         res.setHeader("Allow", "GET");
@@ -7,10 +8,11 @@ export default async function handler(req, res) {
         });
     }
 
+    // Current Blast Buddies room APIs
     const regions = {
-        na: "https://na1-ping.blastbuddies.io/api/rooms",
-        as: "https://as1-ping.blastbuddies.io/api/rooms",
-        eu: "https://eu1-ping.blastbuddies.io/api/rooms"
+        na: "https://na-blue.blastbuddies.io/api/rooms",
+        as: "https://as-blue.blastbuddies.io/api/rooms",
+        eu: "https://eu-blue.blastbuddies.io/api/rooms"
     };
 
     try {
@@ -18,6 +20,7 @@ export default async function handler(req, res) {
             Object.entries(regions).map(async ([region, url]) => {
                 try {
                     const response = await fetch(url, {
+                        method: "GET",
                         headers: {
                             "Accept": "application/json"
                         }
