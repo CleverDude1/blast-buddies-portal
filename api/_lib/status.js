@@ -1,33 +1,46 @@
 
 import { rest, extractList } from './shared.js';
-import { SOURCES, BOARDS } from '../_sources/index.js';
 
 const MIN = 60 * 1000;
 const OK_MIN = 75;
 const DOWN_MIN = 150;
 const CRASH_MIN = 15;
-
 const TTL = 2 * MIN;
+
 const cache = {};
 
 const LEVEL = { ok: 0, warn: 1, down: 2 };
+
 const TITLE = {
   ok: 'Working',
   warn: 'Working with problems',
   down: 'Not working',
 };
 
-const EXPECTED_BOARDS = BOARDS.map((b) => b.key);
+const EXPECTED_BOARDS = [
+  'leaderboard-day',
+  'leaderboard-week',
+  'leaderboard-ranked',
+  'clan',
+];
 
-const iso = (ms) => (ms == null ? null : new Date(ms).toISOString());
-const text = (v) => String(v ?? '').slice(0, 220);
+const iso = (ms) => (
+  ms == null || !Number.isFinite(ms)
+    ? null
+    : new Date(ms).toISOString()
+);
+
+const text = (value) => String(value ?? '').slice(0, 220);
 
 // ------------------------------------------------------------
-// 1. Collection health
+// 1. NEW API / HOURLY COLLECTION STATUS
 //
-// collect.js inserts collection_runs.started_at, but does not
-// update finished_at/status/summary. Therefore, determine whether
-// a run completed by checking its actual raw_snapshots.
+// IMPORTANT:
+// This function does NOT contact Pangolin.
+//
+// It checks the snapshots already stored by collect.js.
+// The collector runs once per hour, so the status page can
+// refresh as often as it wants without using Pangolin requests.
 // ------------------------------------------------------------
 
 async function collectorStatus() {
@@ -38,7 +51,7 @@ async function collectorStatus() {
       'collection_runs?select=id,started_at&order=started_at.desc&limit=12'
     ),
     rest(
-      'raw_snapshots?select=run_id,source,fetched_at,http_status&order=fetched_at.desc&limit=100'
+      'raw_snapshots?select=run_id,source,fetched_at,http_status&order=fetched_at.desc&limit=200'
     ),
   ]);
 
@@ -51,7 +64,7 @@ async function collectorStatus() {
     return {
       state: 'warn',
       title: TITLE.warn,
-      reason: 'No collection runs have been recorded yet.',
+      reason: 'No hourly collection runs have been recorded yet.',
       lastRunAt: null,
       lastRunStatus: null,
       lastGoodAt: null,
@@ -62,12 +75,12 @@ async function collectorStatus() {
   const checkedRuns = runs.map((run) => {
     const startedAt = Date.parse(run.started_at);
 
-    const rows = snapshots.filter(
-      (snapshot) => snapshot.run_id === run.id
+    const runSnapshots = snapshots.filter(
+      (snapshot) => String(snapshot.run_id) === String(run.id)
     );
 
     const saved = new Set(
-      rows
+      runSnapshots
         .filter((snapshot) => {
           const status = Number(snapshot.http_status);
           return status >= 200 && status < 300;
@@ -76,7 +89,7 @@ async function collectorStatus() {
     );
 
     const missing = EXPECTED_BOARDS.filter(
-      (key) => !saved.has(key)
+      (board) => !saved.has(board)
     );
 
     return {
@@ -84,7 +97,6 @@ async function collectorStatus() {
       startedAt,
       saved,
       missing,
-      count: EXPECTED_BOARDS.length - missing.length,
       complete: missing.length === 0,
     };
   });
@@ -94,14 +106,17 @@ async function collectorStatus() {
   const lastGood =
     checkedRuns.find((run) => run.complete) || null;
 
-  const ageOf = (run) =>
-    run ? (now - run.startedAt) / MIN : Infinity;
+  const ageMinutes = (run) => (
+    run && Number.isFinite(run.startedAt)
+      ? (now - run.startedAt) / MIN
+      : Infinity
+  );
 
-  const lastGoodAge = ageOf(lastGood);
-  const latestAge = ageOf(latest);
+  const latestAge = ageMinutes(latest);
+  const lastGoodAge = ageMinutes(lastGood);
 
   let state = 'ok';
-  let reason = 'The latest hourly collection saved all expected boards.';
+  let reason = 'The latest hourly collection saved all four boards.';
 
   const bump = (nextState, message) => {
     if (LEVEL[nextState] > LEVEL[state]) {
@@ -114,43 +129,37 @@ async function collectorStatus() {
     if (latestAge > CRASH_MIN) {
       bump(
         'down',
-        'No collection has saved all expected boards. The latest run may have failed or timed out.'
+        'No complete hourly collection has been recorded. The latest run may have failed or timed out.'
       );
     } else {
       bump(
         'warn',
-        'The latest collection has started but has not saved all expected boards yet.'
+        'The latest hourly collection has started but has not saved all four boards yet.'
       );
     }
   } else {
     if (lastGoodAge > DOWN_MIN) {
       bump(
         'down',
-        `No complete collection for ${Math.round(lastGoodAge / 60 * 10) / 10} hours.`
+        `No complete hourly collection for ${Math.round(lastGoodAge / 60 * 10) / 10} hours.`
       );
     } else if (lastGoodAge > OK_MIN) {
       bump(
         'warn',
-        `The last complete collection is ${Math.round(lastGoodAge)} minutes old.`
+        `The last complete hourly collection is ${Math.round(lastGoodAge)} minutes old.`
       );
     }
 
-    if (latest.id !== lastGood.id && latestAge > CRASH_MIN) {
+    if (!latest.complete && latestAge > CRASH_MIN) {
       bump(
         'warn',
-        `The newest collection is incomplete. Missing: ${latest.missing.join(', ')}.`
+        `The latest collection is incomplete. Missing boards: ${latest.missing.join(', ')}.`
       );
     }
   }
 
-  if (latest.complete) {
-    reason = lastGoodAge > OK_MIN
-      ? `The latest complete collection is ${Math.round(lastGoodAge)} minutes old.`
-      : 'The latest hourly collection saved all expected boards.';
-  }
-
-  const errors = latest.missing.map((key) => ({
-    where: key,
+  const errors = latest.missing.map((board) => ({
+    where: board,
     message: 'No successful snapshot was saved for this board in the latest run.',
   }));
 
@@ -161,7 +170,7 @@ async function collectorStatus() {
     lastRunAt: iso(latest.startedAt),
     lastRunStatus: latest.complete
       ? 'ok'
-      : latest.count > 0
+      : latest.saved.size > 0
         ? 'partial'
         : 'incomplete',
     lastGoodAt: iso(lastGood?.startedAt ?? null),
@@ -170,115 +179,59 @@ async function collectorStatus() {
 }
 
 // ------------------------------------------------------------
-// 2. New API live check
+// 2. CACHED CHECKS
+// ------------------------------------------------------------
+
+async function cachedCheck(key, fn) {
+  if (
+    cache[key] &&
+    Date.now() - cache[key].time < TTL
+  ) {
+    return cache[key].value;
+  }
+
+  const value = await fn();
+
+  cache[key] = {
+    time: Date.now(),
+    value,
+  };
+
+  return value;
+}
+
+// ------------------------------------------------------------
+// 3. NEW API STATUS
 //
-// The first configured source is the combined Pangolin API.
-// Validate its response against every board in BOARDS.
+// Supabase only. No direct Pangolin requests.
+//
+// This reports whether the hourly collection is saving fresh
+// data. It does not independently identify which upstream
+// source supplied the snapshots.
 // ------------------------------------------------------------
 
-async function fetchJson(url, timeoutMs = 8000) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+async function newApi() {
+  const collection = await cachedCheck(
+    'collection',
+    collectorStatus
+  );
 
-  try {
-    const response = await fetch(url, {
-      signal: ctrl.signal,
-      headers: {
-        Accept: 'application/json',
-        'cache-control': 'no-cache',
-        'user-agent': 'blast-buddies-status-check',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      throw new Error(`No answer within ${timeoutMs / 1000} seconds`);
-    }
-
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function checkCombinedSource() {
-  const source = SOURCES[0];
-
-  if (!source?.url) {
-    return {
-      state: 'down',
-      good: 0,
-      total: EXPECTED_BOARDS.length,
-      errors: [{
-        where: 'Pangolin',
-        message: 'The primary combined API source is not configured.',
-      }],
-    };
-  }
-
-  try {
-    const json = await fetchJson(source.url);
-
-    if (json?.metadata?.stale === true) {
-      throw new Error('The combined API returned a stale snapshot.');
-    }
-
-    const errors = [];
-
-    for (const board of BOARDS) {
-      try {
-        const rows = board.pick(json);
-
-        if (!Array.isArray(rows) || rows.length === 0) {
-          errors.push({
-            where: board.key,
-            message: 'The combined API answered, but this board was empty or missing.',
-          });
-        }
-      } catch (error) {
-        errors.push({
-          where: board.key,
-          message: text(error.message || error),
-        });
-      }
-    }
-
-    const total = EXPECTED_BOARDS.length;
-    const good = total - errors.length;
-
-    return {
-      state: good === total
-        ? 'ok'
-        : good > 0
-          ? 'warn'
-          : 'down',
-      good,
-      total,
-      errors,
-    };
-  } catch (error) {
-    return {
-      state: 'down',
-      good: 0,
-      total: EXPECTED_BOARDS.length,
-      errors: [{
-        where: 'Pangolin',
-        message: text(error.message || error),
-      }],
-    };
-  }
+  return {
+    state: collection.state,
+    title: collection.title,
+    reason: collection.reason,
+    lastRunAt: collection.lastRunAt,
+    lastRunStatus: collection.lastRunStatus,
+    lastGoodAt: collection.lastGoodAt,
+    errors: collection.errors,
+  };
 }
 
 // ------------------------------------------------------------
-// 3. Old API live check
+// 4. OLD API STATUS
 //
 // Retains the original direct game-server checks.
-// This is only the legacy fallback indicator.
+// These requests do not contact Pangolin.
 // ------------------------------------------------------------
 
 const SEASON = encodeURIComponent(
@@ -312,8 +265,23 @@ const OLD_BOARDS = [
 ];
 
 async function probeUrl(url, idKey) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+
   try {
-    const json = await fetchJson(url, 6000);
+    const response = await fetch(url, {
+      signal: ctrl.signal,
+      headers: {
+        Accept: 'application/json',
+        'cache-control': 'no-cache',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const json = await response.json();
     const rows = extractList(json, idKey);
 
     if (!Array.isArray(rows) || !rows.length) {
@@ -322,7 +290,11 @@ async function probeUrl(url, idKey) {
 
     return null;
   } catch (error) {
-    return text(error.message || error);
+    return error.name === 'AbortError'
+      ? 'No answer within 6 seconds.'
+      : text(error.message || error);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -333,7 +305,6 @@ async function checkOldApi() {
 
       for (const url of board.urls) {
         error = await probeUrl(url, board.idKey);
-
         if (!error) break;
       }
 
@@ -362,78 +333,7 @@ async function checkOldApi() {
 }
 
 // ------------------------------------------------------------
-// 4. Cached live checks
-// ------------------------------------------------------------
-
-async function cachedCheck(key, fn) {
-  if (
-    cache[key] &&
-    Date.now() - cache[key].time < TTL
-  ) {
-    return cache[key].value;
-  }
-
-  const value = await fn();
-
-  cache[key] = {
-    time: Date.now(),
-    value,
-  };
-
-  return value;
-}
-
-// ------------------------------------------------------------
-// 5. New API status
-// ------------------------------------------------------------
-
-async function newApi() {
-  const [live, collection] = await Promise.all([
-    cachedCheck('new', checkCombinedSource),
-    collectorStatus().catch((error) => ({
-      state: 'warn',
-      title: TITLE.warn,
-      reason: `Could not read collection history: ${text(error.message || error)}`,
-      lastRunAt: null,
-      lastRunStatus: null,
-      lastGoodAt: null,
-      errors: [],
-    })),
-  ]);
-
-  let state = live.state;
-  let reason;
-
-  if (live.state === 'ok') {
-    reason = 'The combined Pangolin API is answering and all four boards contain data.';
-  } else if (live.state === 'warn') {
-    reason = `The combined Pangolin API is answering, but only ${live.good} of ${live.total} boards contain data.`;
-  } else {
-    reason = 'The combined Pangolin API is not answering with usable board data.';
-  }
-
-  // A working live API with collection problems is still working,
-  // but receives the warning state.
-  if (live.state === 'ok' && collection.state !== 'ok') {
-    state = 'warn';
-    reason = `The combined API is working, but hourly collection has problems: ${collection.reason}`;
-  }
-
-  return {
-    state,
-    title: TITLE[state],
-    reason,
-    lastRunAt: collection.lastRunAt,
-    lastRunStatus: collection.lastRunStatus,
-    lastGoodAt: collection.lastGoodAt,
-    errors: live.errors.length
-      ? live.errors
-      : collection.errors,
-  };
-}
-
-// ------------------------------------------------------------
-// 6. Old API status
+// 5. OLD API STATUS RESPONSE
 // ------------------------------------------------------------
 
 async function oldApi() {
@@ -461,7 +361,7 @@ async function oldApi() {
 }
 
 // ------------------------------------------------------------
-// 7. Public status endpoint
+// 6. PUBLIC STATUS ENDPOINT
 // ------------------------------------------------------------
 
 export async function apiStatus() {
@@ -482,9 +382,11 @@ export async function apiStatus() {
 
   return {
     generatedAt: new Date().toISOString(),
+
     new: newResult.status === 'fulfilled'
       ? newResult.value
       : unknown(newResult.reason),
+
     old: oldResult.status === 'fulfilled'
       ? oldResult.value
       : unknown(oldResult.reason),
