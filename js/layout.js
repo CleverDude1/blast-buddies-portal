@@ -143,3 +143,4 @@ document.body.append(Object.assign(document.createElement('script'), { src: 'js/
 // API status buttons in the top bar (New API / Old API)
 document.head.insertAdjacentHTML('beforeend', '<link rel="stylesheet" href="css/status.css">');
 document.body.append(Object.assign(document.createElement('script'), { src: 'js/status.js' }));
+document.body.append(Object.assign(document.createElement('script'), { src: 'js/bots.js' }));
