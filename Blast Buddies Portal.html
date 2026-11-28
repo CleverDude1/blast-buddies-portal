@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Blast Buddies Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#141414;--panel:#1b1b1b;--panel2:#242424;--text:#f2f2f2;--mute:#8a8a8a;--gold:#f0a91c;--gold2:#a8760d;--ink:#1a1204;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:'Oswald','Arial Narrow',Arial,sans-serif;min-height:100vh;
+background:radial-gradient(ellipse at 50% 30%,#5a2f3a 0%,#2a1a1a 45%,#141414 85%)}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+.top{display:flex;align-items:center;gap:8px;background:#0e0e0e;height:64px;padding:0 12px;overflow-x:auto}
+.top .tab{height:100%;display:flex;align-items:center;gap:8px;padding:0 22px;font-size:22px;letter-spacing:.5px;color:#ddd;white-space:nowrap}
+.top .tab.on{background:linear-gradient(#3a2c0c,#2a2008);color:var(--gold);border-bottom:4px solid var(--gold)}
+.spacer{flex:1}
+.stat{display:flex;align-items:center;gap:8px;font-size:22px;white-space:nowrap}
+.dot{width:22px;height:22px;border-radius:50%;background:var(--gold);display:inline-block}
+.lvl{min-width:200px}
+.lvl small{background:var(--gold);color:var(--ink);padding:1px 8px;font-size:13px;font-weight:600}
+.bar{height:8px;background:#333;margin-top:4px}.bar i{display:block;height:100%;background:var(--gold);width:0;transition:width .3s}
+.wrap{display:grid;grid-template-columns:minmax(260px,430px) 1fr minmax(280px,420px);gap:14px;padding:16px;max-width:1500px;margin:0 auto}
+.card{background:rgba(20,20,20,.9);padding:14px 18px}
+.label{color:var(--gold);font-size:22px;font-weight:400}
+.big{font-size:32px;font-weight:600;text-transform:uppercase}
+.left{display:flex;flex-direction:column;gap:12px}
+.spawn{display:flex;align-items:center;gap:22px;background:linear-gradient(#c58a14,#9a6a0c);color:var(--ink);padding:26px 24px;text-align:left;width:100%;text-decoration:none;transition:filter .15s}
+.spawn:hover{filter:brightness(1.12)}
+.spawn svg{width:56px;height:56px;fill:var(--ink)}
+.spawn b{display:block;font-size:52px;line-height:1;font-weight:700}
+.spawn span{font-size:26px;opacity:.7}
+.row{display:flex;gap:6px;margin-top:8px}
+.opt{flex:1;padding:12px 6px;background:var(--panel2);font-size:19px;text-transform:uppercase;color:#ccc;text-align:center}
+.opt.on{background:linear-gradient(#3a2c0c,#2a2008);color:var(--gold);border-bottom:3px solid var(--gold)}
+.mini{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+.mini button{background:var(--panel);padding:16px;font-size:19px;text-transform:uppercase;text-align:left}
+.mini button:hover,.opt:hover{background:#2f2f2f}
+.stage{display:flex;align-items:center;justify-content:center;min-height:420px}
+.hero{font-size:min(30vw,260px);filter:drop-shadow(0 20px 30px #000a);animation:bob 3s ease-in-out infinite;user-select:none}
+@keyframes bob{50%{transform:translateY(-12px) rotate(2deg)}}
+.right{display:flex;flex-direction:column;gap:12px}
+.head{display:flex;justify-content:space-between;align-items:baseline}
+.head h2{margin:0;font-size:24px;font-weight:600}.head span{color:var(--mute);font-size:16px}
+.tabs{display:flex;margin:10px 0}
+.tabs button{flex:1;padding:8px;font-size:15px;background:var(--panel2);color:#aaa}
+.tabs .on{color:var(--gold);border-bottom:3px solid var(--gold);background:#2a2008}
+.q{padding:10px 0}.q .t{display:flex;justify-content:space-between;font-size:15px;color:var(--gold)}.q .t em{color:#fff;font-style:normal}
+.q .bar{height:12px;margin-top:8px}
+.buddy{display:flex;align-items:center;gap:10px;background:var(--panel2);padding:8px 10px;margin-top:6px}
+.buddy .av{font-size:26px}.buddy .nm{flex:1;font-size:18px;text-transform:uppercase}
+.buddy .ct{font-size:22px;min-width:38px;text-align:right;color:var(--gold)}
+.sm{width:34px;height:34px;background:#333;font-size:20px}.sm:hover{background:var(--gold);color:var(--ink)}
+.add{display:flex;gap:6px;margin-top:10px}
+.add input{flex:1;min-width:0;background:#0e0e0e;border:1px solid #444;color:var(--text);padding:9px;font:inherit}
+.add button{background:var(--gold);color:var(--ink);padding:0 16px;font-weight:600}
+.tot{display:flex;justify-content:space-between;font-size:20px;margin-top:12px;border-top:1px solid #333;padding-top:10px}
+.reset{color:var(--mute);font-size:14px;margin-top:8px;text-decoration:underline}
+.reward{background:linear-gradient(#262040,#4a2a78);display:flex;align-items:center;gap:14px;padding:14px;margin-top:10px;font-size:18px}
+@media(max-width:1000px){.wrap{grid-template-columns:1fr}.stage{min-height:220px}.hero{font-size:140px}}
+</style>
+</head>
+<body>
+<nav class="top">
+  <div class="tab on">▶ PLAY</div>
+  <div class="tab">LOADOUT</div>
+  <div class="tab">CHARACTER</div>
+  <div class="tab">STORE</div>
+  <div class="spacer"></div>
+  <div class="stat"><span class="dot"></span><span id="coins">0</span></div>
+  <div class="stat lvl"><div style="flex:1"><small id="lvl">LVL 1</small> <span id="xp" style="font-size:15px;color:var(--mute)"></span><div class="bar"><i id="xpbar"></i></div></div></div>
+</nav>
+
+<main class="wrap">
+  <section class="left">
+    <div class="card"><div class="label">MAP</div><div class="big">Blast Zone — Arena</div><div style="color:var(--mute);font-size:20px;margin-top:4px">◷ <span id="clock">03:08</span></div></div>
+    <a class="spawn" id="play" href="#" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24"><path d="M6 3l15 9-15 9z"/></svg>
+      <div><b>PLAY</b><span>GET INTO THE GAME</span></div>
+    </a>
+    <div class="card"><div class="label">TEAM</div>
+      <div class="row" id="team"><button class="opt on">Red</button><button class="opt">Blue</button><button class="opt">Auto</button></div></div>
+    <div class="card"><div class="label">CLASS</div>
+      <div class="row" id="cls"><button class="opt">Bomber</button><button class="opt">Support</button><button class="opt on">Scout</button></div></div>
+    <div class="mini"><button>▮ Stats</button><button>✎ Feedback</button><button>⛨ Clans</button><button>▯ Mobile</button></div>
+  </section>
+
+  <section class="stage"><div class="hero">💣</div></section>
+
+  <aside class="right">
+    <div class="card">
+      <div class="head"><h2>BLAST BUDDIES</h2><span id="resets"></span></div>
+      <div class="tabs"><button class="on" data-t="buddies">BUDDIES</button><button data-t="goals">GOALS</button></div>
+      <div id="p-buddies">
+        <div id="list"></div>
+        <div class="add"><input id="newName" maxlength="20" placeholder="Add a buddy…"><button id="addBtn">ADD</button></div>
+        <div class="tot"><span>TOTAL BLASTS</span><b id="total">0</b></div>
+      </div>
+      <div id="p-goals" hidden></div>
+      <button class="reset" id="reset">Reset tracker</button>
+    </div>
+    <div class="card" style="display:flex;justify-content:space-between;font-size:18px"><span>CASH BONUS <small style="color:var(--gold)">+10% CASH</small></span><span>INVITE FRIENDS <small style="color:var(--gold)">+5% / FRIEND</small></span></div>
+    <div class="card"><div class="head"><h2 style="font-size:20px">DAILY REWARD</h2><span>DAY <b id="day">1</b></span></div>
+      <div style="color:var(--mute);margin-top:6px">Reach your blast goal to claim</div>
+      <div class="bar" style="height:10px;margin-top:10px"><i id="dailybar"></i></div></div>
+  </aside>
+</main>
+
+<script>
+// ===== CONFIG: set this to your game's link =====
+const GAME_URL = "https://www.roblox.com/games/YOUR_GAME_ID";
+// ================================================
+const KEY = "blastBuddiesTracker.v1";
+const AVATARS = ["💥","🧨","🚀","🎆","🔥","⚡"];
+const GOALS = [
+  {t:"Blast 10 times", n:10, xp:250},
+  {t:"Blast 25 times", n:25, xp:250},
+  {t:"Blast 50 times", n:50, xp:500},
+  {t:"Team up with 3 buddies", n:3, xp:250, buddies:true}
+];
+let S = {buddies:[{n:"Buddy 1",b:0}], day:1};
+try { const r = localStorage.getItem(KEY); if (r) S = JSON.parse(r); } catch(e) {}
+const $ = id => document.getElementById(id);
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {} };
+const total = () => S.buddies.reduce((a,x)=>a+x.b,0);
+
+function render(){
+  const t = total(), xp = t*20, lvl = Math.floor(xp/500)+1, into = xp%500;
+  $("coins").textContent = (t*15).toLocaleString();
+  $("lvl").textContent = "LVL " + lvl;
+  $("xp").textContent = into + " / 500";
+  $("xpbar").style.width = (into/500*100)+"%";
+  $("total").textContent = t;
+  $("day").textContent = S.day;
+  $("dailybar").style.width = Math.min(100,t/50*100)+"%";
+  const list = $("list"); list.innerHTML = "";
+  S.buddies.forEach((b,i)=>{
+    const d = document.createElement("div"); d.className="buddy";
+    d.innerHTML = '<span class="av">'+AVATARS[i%AVATARS.length]+'</span><span class="nm"></span><button class="sm" data-a="-">−</button><span class="ct">'+b.b+'</span><button class="sm" data-a="+">+</button><button class="sm" data-a="x">×</button>';
+    d.querySelector(".nm").textContent = b.n;
+    d.querySelectorAll("button").forEach(btn=>btn.onclick=()=>{
+      if(btn.dataset.a==="+") b.b++;
+      else if(btn.dataset.a==="-") b.b=Math.max(0,b.b-1);
+      else S.buddies.splice(i,1);
+      save(); render();
+    });
+    list.appendChild(d);
+  });
+  $("p-goals").innerHTML = GOALS.map(g=>{
+    const v = Math.min(g.n, g.buddies ? S.buddies.length : t);
+    return '<div class="q"><div class="t"><span>'+g.t+' <em>+'+g.xp+' XP</em></span><em>'+v+' / '+g.n+'</em></div><div class="bar"><i style="width:'+(v/g.n*100)+'%"></i></div></div>';
+  }).join('') + '<div class="reward"><span style="font-size:34px">🎁</span><div>CLICK TO VIEW REWARDS<br><b>FREE TRACK COMPLETE</b></div></div>';
+}
+
+$("addBtn").onclick = () => {
+  const v = $("newName").value.trim(); if(!v) return;
+  S.buddies.push({n:v,b:0}); $("newName").value=""; save(); render();
+};
+$("newName").onkeydown = e => { if(e.key==="Enter") $("addBtn").click(); };
+$("reset").onclick = () => { if(confirm("Reset all Blast Buddies data?")){ S={buddies:[{n:"Buddy 1",b:0}],day:1}; save(); render(); } };
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x===b));
+  $("p-buddies").hidden = b.dataset.t!=="buddies"; $("p-goals").hidden = b.dataset.t!=="goals";
+});
+["team","cls"].forEach(id=>$(id).querySelectorAll(".opt").forEach(o=>o.onclick=()=>{
+  $(id).querySelectorAll(".opt").forEach(x=>x.classList.toggle("on",x===o));
+}));
+$("play").href = GAME_URL;
+
+// resets countdown (to local midnight)
+setInterval(()=>{
+  const n=new Date(), m=new Date(n); m.setHours(24,0,0,0);
+  const s=Math.floor((m-n)/1000), h=Math.floor(s/3600), mi=Math.floor(s%3600/60);
+  $("resets").textContent = "Resets in "+h+"h "+mi+"m";
+},1000);
+render();
+</script>
+</body>
+</html>
